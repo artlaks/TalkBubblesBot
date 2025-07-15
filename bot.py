@@ -2,7 +2,6 @@ import logging
 import asyncio
 import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram import Router
@@ -10,7 +9,7 @@ import openai
 
 from config import BOT_TOKEN, OPENAI_API_KEY
 
-# Настройка логгера
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
 # Инициализация
@@ -21,15 +20,7 @@ dp.include_router(router)
 
 openai.api_key = OPENAI_API_KEY
 
-# Обработчик сообщений
-@router.message()
-async def handle_message(message: Message):
-    user_text = message.text
-    await message.answer("💭 Думаю...")
-    response = await get_gpt_response(user_text)
-    await message.answer(f"🤖 {response}")
-
-# Функция запроса к GPT
+# Ответ от GPT
 async def get_gpt_response(prompt: str) -> str:
     completion = await openai.ChatCompletion.acreate(
         model="gpt-4",
@@ -38,7 +29,14 @@ async def get_gpt_response(prompt: str) -> str:
     )
     return completion.choices[0].message.content
 
-# Точка входа
+# Обработка входящих сообщений
+@router.message()
+async def handle_message(message: types.Message):
+    await message.answer("💭 Думаю...")
+    reply = await get_gpt_response(message.text)
+    await message.answer(f"🤖 {reply}")
+
+# Запуск бота
 async def main():
     await dp.start_polling(bot)
 
