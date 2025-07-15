@@ -8,13 +8,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, OPENAI_API_KEY
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
-# Конфигурация OpenAI
 openai.api_key = OPENAI_API_KEY
 
-# Инициализация бота и диспетчера
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -23,23 +20,25 @@ dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
-# Обработка входящих сообщений
+async def get_gpt_response(prompt: str) -> str:
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(None, lambda: openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+    ))
+    return response.choices[0].message["content"].strip()
+
 @router.message()
 async def handle_message(message: types.Message):
     await message.answer("💭 Думаю...")
-    reply = await get_gpt_response(message.text)
-    await message.answer(f"🤖 {reply}")
+    try:
+        reply = await get_gpt_response(message.text)
+        await message.answer(f"🤖 {reply}")
+    except Exception as e:
+        await message.answer("⚠️ Произошла ошибка при обработке запроса.")
+        logging.exception("❌ Ошибка при вызове OpenAI:")
 
-# Запрос к OpenAI GPT
-async def get_gpt_response(prompt: str) -> str:
-    completion = await openai.ChatCompletion.acreate(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-    )
-    return completion.choices[0].message.content.strip()
-
-# Запуск бота
 async def main():
     await dp.start_polling(bot)
 
