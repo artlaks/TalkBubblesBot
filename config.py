@@ -1,7 +1,9 @@
 import os
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения из .env
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
-
-if BOT_TOKEN is None or HF_TOKEN is None:
-    raise ValueError("Environment variables BOT_TOKEN or HF_TOKEN are not set")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
