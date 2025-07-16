@@ -1,2 +1,2 @@
+requests
 aiogram>=3.7.0
-openai==0.28
