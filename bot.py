@@ -66,5 +66,17 @@ async def on_startup_app(app: web.Application):
 
 app.on_startup.append(on_startup_app)
 
+# ---- Установка webhook при локальном запуске ----
+async def setup_webhook():
+    webhook_url = os.getenv("RENDER_EXTERNAL_URL", "") + WEBHOOK_PATH
+    await bot.set_webhook(webhook_url)
+    logger.info(f"\ud83d\ude80 Вебхук установлен: {webhook_url}")
+
 if __name__ == '__main__':
+    import asyncio
+    try:
+        asyncio.get_event_loop().run_until_complete(setup_webhook())
+    except Exception as e:
+        logger.warning(f"\u26a0\ufe0f Не удалось установить webhook: {e}")
+
     web.run_app(app, host='0.0.0.0', port=int(os.getenv("PORT", 3000)))
