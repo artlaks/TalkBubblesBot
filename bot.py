@@ -20,16 +20,16 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Hugging Face модель DeepSeek
-HUGGINGFACE_MODEL = "deepseek-ai/deepseek-llm-7b-instruct"
+# Используем модель Zephyr вместо DeepSeek
+HUGGINGFACE_MODEL = "HuggingFaceH4/zephyr-7b-beta"
 
-def query_deepseek(prompt: str) -> str:
+def query_model(prompt: str) -> str:
     url = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_MODEL}"
     headers = {
         "Authorization": f"Bearer {HF_TOKEN}"
     }
     data = {
-        "inputs": prompt,
+        "inputs": f"<|system|>You are a helpful assistant.<|user|>{prompt}<|assistant|>",
         "parameters": {
             "max_new_tokens": 200,
             "do_sample": True,
@@ -41,7 +41,7 @@ def query_deepseek(prompt: str) -> str:
     response = requests.post(url, headers=headers, json=data)
     if response.status_code == 200:
         try:
-            return response.json()[0]["generated_text"]
+            return response.json()[0]["generated_text"].split("<|assistant|>")[-1].strip()
         except Exception as e:
             logger.error(f"Ошибка парсинга ответа: {e}")
             return "⚠️ Ошибка в ответе модели."
@@ -56,7 +56,7 @@ async def handle_message(message: types.Message):
     
     await message.answer("💬 Думаю...")
 
-    reply = query_deepseek(user_input)
+    reply = query_model(user_input)
     await message.answer(reply)
 
 # ---- Веб-сервер и webhook ----
