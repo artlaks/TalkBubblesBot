@@ -1,83 +1,76 @@
 import os
 import logging
-import asyncio
 import requests
-
-from aiohttp import web
-from aiogram import Bot, Dispatcher, Router, types
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import setup_application, SimpleRequestHandler
+from aiohttp import web
+from dotenv import load_dotenv
 
-# 🔧 Логирование
-logging.basicConfig(level=logging.INFO)
-
-# 📦 Переменные окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Загрузка переменных окружения
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
 HF_TOKEN = os.getenv("HF_TOKEN")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # https://your-render-url.onrender.com
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# ❗ Проверка переменных
-if not BOT_TOKEN or not HF_TOKEN or not WEBHOOK_HOST:
-    raise RuntimeError("❌ Переменные BOT_TOKEN, HF_TOKEN или WEBHOOK_HOST не заданы!")
+# Настройки логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# 🤖 Инициализация бота
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+# Создание бота и диспетчера
+bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-router = Router()
-dp.include_router(router)
 
-# 🔗 Модель DeepSeek на Hugging Face
-MODEL_URL = "https://api-inference.huggingface.co/models/deepseek-ai/deepseek-chat"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# Hugging Face модель DeepSeek
+HUGGINGFACE_MODEL = "deepseek-ai/deepseek-llm-7b-instruct"
 
-# 🧠 Функция обращения к DeepSeek
 def query_deepseek(prompt: str) -> str:
-    payload = {
-        "inputs": f"<|system|>\nYou are a helpful assistant.\n<|user|>\n{prompt}\n<|assistant|>",
-        "parameters": {"max_new_tokens": 200}
+    url = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_MODEL}"
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}"
     }
-    response = requests.post(MODEL_URL, headers=headers, json=payload)
+    data = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 200,
+            "do_sample": True,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+    }
+
+    response = requests.post(url, headers=headers, json=data)
     if response.status_code == 200:
-        result = response.json()
-        return result[0]["generated_text"].split("<|assistant|>")[-1].strip()
+        try:
+            return response.json()[0]["generated_text"]
+        except Exception as e:
+            logger.error(f"Ошибка парсинга ответа: {e}")
+            return "⚠️ Ошибка в ответе модели."
     else:
-        logging.error(f"❌ Ошибка HuggingFace API: {response.status_code} - {response.text}")
-        return "⚠️ Не удалось получить ответ от Deepseek."
+        logger.error(f"❌ Ошибка HuggingFace API: {response.status_code} - {response.text}")
+        return "⚠️ Ошибка при обращении к языковой модели."
 
-# 📩 Обработка сообщений от пользователей
-@router.message()
+@dp.message()
 async def handle_message(message: types.Message):
-    logging.info(f"📨 Сообщение от {message.from_user.id}: {message.text}")
-    await message.answer("💭 Думаю...")
-    loop = asyncio.get_event_loop()
-    reply = await loop.run_in_executor(None, query_deepseek, message.text)
-    await message.answer(f"🤖 {reply}")
+    user_input = message.text
+    logger.info(f"📨 Сообщение от {message.from_user.id}: {user_input}")
+    
+    await message.answer("💬 Думаю...")
 
-# 🌐 Webhook-сервер aiohttp
+    reply = query_deepseek(user_input)
+    await message.answer(reply)
+
+# ---- Веб-сервер и webhook ----
+
+WEBHOOK_PATH = "/webhook"
 app = web.Application()
+app.router.add_post(WEBHOOK_PATH, dp.handler)
 
-# 🔄 Обработка запуска
 async def on_startup_app(app: web.Application):
-    await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    webhook_url = os.getenv("RENDER_EXTERNAL_URL", "") + WEBHOOK_PATH
+    await bot.set_webhook(webhook_url)
+    logger.info(f"📡 Установлен webhook: {webhook_url}")
 
-# 🔁 Обработка остановки
-async def on_shutdown_app(app: web.Application):
-    await bot.delete_webhook()
-    logging.info("🛑 Webhook удалён")
-
-# 📡 Настройка Webhook и сервера
 app.on_startup.append(on_startup_app)
-app.on_shutdown.append(on_shutdown_app)
 
-setup_application(app, dp, bot=bot, handle_in_background=True)
-SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
-
-# 🚀 Запуск приложения
-if __name__ == "__main__":
-    logging.info("🚀 Webhook бот запущен")
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+if __name__ == '__main__':
+    web.run_app(app, host='0.0.0.0', port=int(os.getenv("PORT", 3000)))
