@@ -1,66 +1,60 @@
 import os
 import logging
-import requests
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Настройки логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Создание бота и диспетчера
+# Создание клиента OpenRouter через OpenAI совместимый интерфейс
+client = AsyncOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
+
+# Telegram bot
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Используем модель Zephyr вместо DeepSeek
-HUGGINGFACE_MODEL = "HuggingFaceH4/zephyr-7b-beta"
+# Используем DeepSeek через OpenRouter
+MODEL = "deepseek-chat"
 
-def query_model(prompt: str) -> str:
-    url = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_MODEL}"
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}"
-    }
-    data = {
-        "inputs": f"<|system|>You are a helpful assistant.<|user|>{prompt}<|assistant|>",
-        "parameters": {
-            "max_new_tokens": 200,
-            "do_sample": True,
-            "temperature": 0.7,
-            "top_p": 0.9
-        }
-    }
-
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        try:
-            return response.json()[0]["generated_text"].split("<|assistant|>")[-1].strip()
-        except Exception as e:
-            logger.error(f"Ошибка парсинга ответа: {e}")
-            return "⚠️ Ошибка в ответе модели."
-    else:
-        logger.error(f"❌ Ошибка HuggingFace API: {response.status_code} - {response.text}")
-        return "⚠️ Ошибка при обращении к языковой модели."
+async def get_response_from_openrouter(prompt: str) -> str:
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful English-speaking assistant for language learners."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"\u274c Ошибка OpenRouter: {e}")
+        return "\u26a0\ufe0f Ошибка при обращении к языковой модели."
 
 @dp.message()
 async def handle_message(message: types.Message):
     user_input = message.text
-    logger.info(f"📨 Сообщение от {message.from_user.id}: {user_input}")
-    
-    await message.answer("💬 Думаю...")
+    logger.info(f"\ud83d\udce8 Сообщение от {message.from_user.id}: {user_input}")
 
-    reply = query_model(user_input)
+    await message.answer("\ud83d\udd0d Думаю...")
+
+    reply = await get_response_from_openrouter(user_input)
     await message.answer(reply)
 
-# ---- Веб-сервер и webhook ----
-
+# ---- Webhook-сервер ----
 WEBHOOK_PATH = "/webhook"
 app = web.Application()
 app.router.add_post(WEBHOOK_PATH, dp.handler)
@@ -68,7 +62,7 @@ app.router.add_post(WEBHOOK_PATH, dp.handler)
 async def on_startup_app(app: web.Application):
     webhook_url = os.getenv("RENDER_EXTERNAL_URL", "") + WEBHOOK_PATH
     await bot.set_webhook(webhook_url)
-    logger.info(f"📡 Установлен webhook: {webhook_url}")
+    logger.info(f"\ud83d\udce1 Установлен webhook: {webhook_url}")
 
 app.on_startup.append(on_startup_app)
 
