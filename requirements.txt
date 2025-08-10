@@ -1,3 +1,4 @@
-python-telegram-bot==20.8  # Альтернатива aiogram без сложных зависимостей
-Pillow==11.3.0  # Более новая версия с поддержкой Python 3.13
+python-telegram-bot==20.8
+Pillow==11.3.0
 python-dotenv==1.0.0
+aiohttp==3.10.10
