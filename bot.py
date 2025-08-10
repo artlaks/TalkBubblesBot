@@ -28,13 +28,18 @@ dp = Dispatcher()
 async def send_welcome(message: Message):
     await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу в пузыре!")
 
-# Обработка текстовых сообщений (AI через Puter.js)
+# Обработка текстовых сообщений
 @dp.message()
 async def handle_message(message: Message):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://js.puter.com/v2/openrouter/v1/chat/completions",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://talkbubblesbot.onrender.com",
+                    "Content-Type": "application/json"
+                },
                 json={
                     "model": "google/gemma-2-9b-it:free",
                     "messages": [
@@ -45,7 +50,9 @@ async def handle_message(message: Message):
                 }
             ) as response:
                 if response.status != 200:
-                    raise Exception(f"API error: {response.status}")
+                    response_text = await response.text()
+                    logging.error(f"API error: {response.status}, Response: {response_text}")
+                    raise Exception(f"API error: {response.status}: {response_text}")
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
 
