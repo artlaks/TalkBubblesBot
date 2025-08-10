@@ -1,7 +1,4 @@
 aiogram==3.4.1
-Pillow==10.0.0
+Pillow>=10.1.0
 python-dotenv==1.0.0
-openai==1.35.14
-httpx<1,>=0.23.0
 --prefer-binary
-pydantic>=2.4.1,<2.6.0
