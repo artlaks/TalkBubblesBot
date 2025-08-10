@@ -9,7 +9,7 @@ from aiohttp import web
 from dotenv import load_dotenv
 
 # Логирование
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -17,9 +17,12 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 
-if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY or not RENDER_EXTERNAL_HOSTNAME:
-    raise ValueError("TELEGRAM_TOKEN, OPENROUTER_API_KEY или RENDER_EXTERNAL_HOSTNAME не установлены")
+if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
+    raise ValueError("TELEGRAM_TOKEN or OPENROUTER_API_KEY not set")
+if not RENDER_EXTERNAL_HOSTNAME:
+    raise ValueError("RENDER_EXTERNAL_HOSTNAME not set")
 
+# Инициализация бота
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
@@ -56,33 +59,65 @@ async def handle_message(message: Message):
                 ai_text = data['choices'][0]['message']['content']
 
         await message.reply(ai_text)
+
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
-# Установка вебхука при старте
+# Автоматическая установка вебхука и диагностика
 async def on_startup(app) -> None:
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
     try:
-        await bot.delete_webhook()
-        await bot.set_webhook(webhook_url, allowed_updates=["message"])
-        logging.info(f"Webhook set to {webhook_url}")
+        current_webhook = await bot.get_webhook_info()
+        if current_webhook.url != webhook_url:
+            await bot.delete_webhook()
+            await bot.set_webhook(webhook_url, allowed_updates=["message"])
+            logging.info(f"Webhook установлен: {webhook_url}")
+        else:
+            logging.info(f"Webhook уже установлен: {webhook_url}")
     except Exception as e:
-        logging.error(f"Failed to set webhook: {str(e)}")
+        logging.error(f"Ошибка при установке webhook: {str(e)}")
+        raise
+
+    # Тест Telegram API
+    try:
+        await bot.send_message(chat_id=(await bot.get_me()).id, text="✅ Бот успешно запущен и подключен к Telegram API.")
+        logging.info("Тестовое сообщение отправлено боту самому себе.")
+    except Exception as e:
+        logging.error(f"Ошибка при отправке тестового сообщения: {str(e)}")
+
+    # Тест OpenRouter API
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "google/gemma-2-9b-it:free",
+                    "messages": [
+                        {"role": "user", "content": "Тест соединения"}
+                    ],
+                    "max_tokens": 10
+                }
+            ) as resp:
+                if resp.status == 200:
+                    logging.info("✅ OpenRouter API доступен.")
+                else:
+                    logging.warning(f"⚠ OpenRouter API вернул статус {resp.status}")
+    except Exception as e:
+        logging.error(f"Ошибка при тестовом запросе к OpenRouter API: {str(e)}")
 
 if __name__ == '__main__':
     app = web.Application()
-
-    # Регистрируем webhook обработчик
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    webhook_requests_handler.register(app, path="/webhook")
-
-    # Настраиваем приложение
-    setup_application(app, dp, bot=bot)
-
-    # Добавляем on_startup
     app.on_startup.append(on_startup)
 
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_requests_handler.register(app, path="/webhook")
+    setup_application(app, dp, bot=bot)
+
     port = int(os.environ.get('PORT', 8080))
-    logging.info(f"Starting server on port {port}")
+    logging.info(f"Запуск на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
