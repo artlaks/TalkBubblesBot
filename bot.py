@@ -1,54 +1,39 @@
-# bot.py
 import os
 import logging
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-# aiogram
-from aiogram import Bot, Dispatcher, Router, types
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import setup_application, SimpleRequestHandler
-
-# OpenRouter (OpenAI-compatible client)
-from openai import AsyncOpenAI
-
-# Загрузка переменных окружения (локально .env, в Render переменные окружения настроены отдельно)
+# Загружаем переменные окружения
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # https://your-app.onrender.com (без /)
-
-# Валидация
-if not BOT_TOKEN or not OPENROUTER_API_KEY or not RENDER_EXTERNAL_URL:
-    raise RuntimeError("BOT_TOKEN, OPENROUTER_API_KEY и RENDER_EXTERNAL_URL должны быть заданы")
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+PORT = int(os.getenv("PORT", 3000))
 
 # Логирование
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация OpenRouter client (через OpenAI-compatible interface)
-# Если OpenRouter требует другой base_url, поменяй на тот, что в их документации.
-client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
+# OpenRouter клиент (интерфейс OpenAI)
+client = AsyncOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
 
-# Telegram bot и dispatcher
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+# Telegram bot
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-router = Router()
-dp.include_router(router)
 
-# Модель (имя модели в OpenRouter). При проблемах проверь документацию OpenRouter
+# Модель DeepSeek
 MODEL = "deepseek-chat"
 
-# Запрос к OpenRouter (DeepSeek через OpenRouter)
-async def get_response_from_openrouter(prompt: str) -> str:
+async def get_response(prompt: str) -> str:
+    """Запрос к модели через OpenRouter"""
     try:
-        resp = await client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=MODEL,
             messages=[
                 {"role": "system", "content": "You are a helpful English-speaking assistant for language learners."},
@@ -56,48 +41,35 @@ async def get_response_from_openrouter(prompt: str) -> str:
             ],
             temperature=0.7,
         )
-        # В новом клиенте структура ответа: resp.choices[0].message.content
-        return resp.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        logger.exception("Ошибка OpenRouter:")
+        logger.error(f"Ошибка OpenRouter: {e}")
         return "⚠️ Ошибка при обращении к языковой модели."
 
-# Обработчик сообщений
-@router.message()
+@dp.message(F.text)
 async def handle_message(message: types.Message):
-    text = message.text or ""
-    logger.info(f"Сообщение от {message.from_user.id}: {text}")
+    logger.info(f"Сообщение от {message.from_user.id}: {message.text}")
     await message.answer("🔍 Думаю...")
-    reply = await get_response_from_openrouter(text)
+    reply = await get_response(message.text)
     await message.answer(reply)
 
-# ---- Webhook + aiohttp app ----
+# --- Webhook-сервер ---
 WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"{RENDER_EXTERNAL_URL.rstrip('/')}{WEBHOOK_PATH}"
-
 app = web.Application()
 
-# on_startup / on_shutdown
-async def on_startup_app(app: web.Application):
-    # установить webhook у телеграма
-    await bot.set_webhook(WEBHOOK_URL)
-    logger.info(f"Webhook установлен: {WEBHOOK_URL}")
+async def webhook_handler(request):
+    update = await request.json()
+    await dp.feed_webhook_update(bot, update)
+    return web.Response()
 
-async def on_shutdown_app(app: web.Application):
-    try:
-        await bot.delete_webhook()
-    except Exception:
-        pass
-    logger.info("Webhook удалён")
+app.router.add_post(WEBHOOK_PATH, webhook_handler)
 
-app.on_startup.append(on_startup_app)
-app.on_shutdown.append(on_shutdown_app)
+async def on_startup(app):
+    webhook_url = RENDER_EXTERNAL_URL + WEBHOOK_PATH
+    await bot.set_webhook(webhook_url)
+    logger.info(f"Webhook установлен: {webhook_url}")
 
-# Регистрируем aiogram в aiohttp через утилиты
-setup_application(app, dp, bot=bot, handle_in_background=True)
-SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+app.on_startup.append(on_startup)
 
-# Запуск приложения
 if __name__ == "__main__":
-    logger.info("Запуск webhook-сервера...")
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
+    web.run_app(app, host="0.0.0.0", port=PORT)
