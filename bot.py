@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')  # Для Render, не используется
-RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'talkbubblesbot.onrender.com')
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set")
@@ -31,6 +31,19 @@ dp = Dispatcher()
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
     await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу в пузыре!")
+
+# Команда /setwebhook (для ручной настройки)
+@dp.message(Command(commands=['setwebhook']))
+async def set_webhook_manual(message: Message):
+    webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+    try:
+        await bot.delete_webhook()
+        await bot.set_webhook(webhook_url, allowed_updates=["message"])
+        await message.reply(f"Webhook установлен: {webhook_url}")
+        logging.info(f"Webhook вручную установлен: {webhook_url}")
+    except Exception as e:
+        logging.error(f"Ошибка установки webhook вручную: {str(e)}")
+        await message.reply(f"Не удалось установить webhook: {str(e)}")
 
 # Обработка текстовых сообщений
 @dp.message()
@@ -55,8 +68,8 @@ async def handle_message(message: Message):
             ) as response:
                 if response.status != 200:
                     response_text = await response.text()
-                    logging.error(f"API error: {response.status}, Response: {response_text}")
-                    raise Exception(f"API error: {response.status}: {response_text}")
+                    logging.error(f"Ошибка API: {response.status}, Ответ: {response_text}")
+                    raise Exception(f"Ошибка API: {response.status}: {response_text}")
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
 
@@ -76,27 +89,30 @@ async def handle_message(message: Message):
         await message.reply(ai_text)
         await message.reply_photo(img_byte_arr)
     except Exception as e:
-        logging.error(f"Error: {str(e)}")
+        logging.error(f"Ошибка: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
 # Webhook setup
-async def on_startup(bot: Bot) -> None:
+async def on_startup(_: Bot) -> None:
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
-    logging.info(f"Attempting to set webhook: {webhook_url}")
+    logging.info(f"Попытка установить webhook: {webhook_url}")
     try:
-        await bot.delete_webhook()  # Удаляем старый webhook, если есть
+        await bot.delete_webhook()
         await bot.set_webhook(webhook_url, allowed_updates=["message"])
-        logging.info(f"Webhook successfully set to {webhook_url}")
+        logging.info(f"Webhook успешно установлен: {webhook_url}")
     except Exception as e:
-        logging.error(f"Failed to set webhook: {str(e)}")
+        logging.error(f"Ошибка установки webhook: {str(e)}")
         raise
 
 if __name__ == '__main__':
+    # Регистрация обработчика startup
+    dp.startup.register(on_startup)
+    
     app = web.Application()
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
 
     port = int(os.environ.get('PORT', 8080))
-    logging.info(f"Starting server on port {port}")
+    logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
