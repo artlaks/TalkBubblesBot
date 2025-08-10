@@ -7,8 +7,6 @@ from aiogram.filters import Command
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont
-import io
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +26,7 @@ dp = Dispatcher()
 # /start
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
-    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу в пузыре!")
+    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу!")
 
 # Обработка сообщений
 @dp.message()
@@ -57,20 +55,7 @@ async def handle_message(message: Message):
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
 
-        # Создаём пузырь с текстом
-        img = Image.new('RGB', (400, 100), color='white')
-        d = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype("fonts/arial.ttf", 20)
-        except:
-            font = ImageFont.load_default()
-        d.text((10, 10), ai_text[:50], fill='black', font=font)
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-
         await message.reply(ai_text)
-        await message.reply_photo(img_byte_arr)
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
