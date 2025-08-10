@@ -64,7 +64,7 @@ async def handle_message(message: Message):
         logging.error(f"Error: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
-# Автоматическая установка вебхука и диагностика
+# Автоматическая установка вебхука при старте
 async def on_startup(app) -> None:
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
     try:
@@ -78,37 +78,6 @@ async def on_startup(app) -> None:
     except Exception as e:
         logging.error(f"Ошибка при установке webhook: {str(e)}")
         raise
-
-    # Тест Telegram API
-    try:
-        await bot.send_message(chat_id=(await bot.get_me()).id, text="✅ Бот успешно запущен и подключен к Telegram API.")
-        logging.info("Тестовое сообщение отправлено боту самому себе.")
-    except Exception as e:
-        logging.error(f"Ошибка при отправке тестового сообщения: {str(e)}")
-
-    # Тест OpenRouter API
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "google/gemma-2-9b-it:free",
-                    "messages": [
-                        {"role": "user", "content": "Тест соединения"}
-                    ],
-                    "max_tokens": 10
-                }
-            ) as resp:
-                if resp.status == 200:
-                    logging.info("✅ OpenRouter API доступен.")
-                else:
-                    logging.warning(f"⚠ OpenRouter API вернул статус {resp.status}")
-    except Exception as e:
-        logging.error(f"Ошибка при тестовом запросе к OpenRouter API: {str(e)}")
 
 if __name__ == '__main__':
     app = web.Application()
