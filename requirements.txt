@@ -1,4 +1,3 @@
-aiogram==3.4.1
-Pillow>=10.1.0
+aiogram==2.25.1  # Стабильная версия без pydantic v2
+Pillow==9.5.0    # Проверенная совместимая версия
 python-dotenv==1.0.0
---prefer-binary
