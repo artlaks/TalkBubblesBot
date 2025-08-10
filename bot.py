@@ -1,80 +1,45 @@
-# bot.py
 import os
 import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from dotenv import load_dotenv
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.storage.memory import MemoryStorage
-
-from openai import AsyncOpenAI
-
 load_dotenv()
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TOKEN:
+    raise ValueError("TELEGRAM_TOKEN not set in environment variables")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # https://your-app.onrender.com
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN not set")
-if not OPENROUTER_API_KEY:
-    raise RuntimeError("OPENROUTER_API_KEY not set")
-if not RENDER_EXTERNAL_URL:
-    raise RuntimeError("RENDER_EXTERNAL_URL not set")
+# Логирование для отладки
+logging.basicConfig(level=logging.INFO)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger(__name__)
+# Команда /start
+@dp.message(commands=['start'])
+async def send_welcome(message: Message):
+    await message.reply("Привет! Я виртуальный собеседник TalkBubblesBot. Расскажи что-нибудь, и я отвечу.")
 
-# OpenRouter client via OpenAI-compatible SDK
-client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-
-MODEL = "deepseek-chat"
-
-async def get_response(prompt: str) -> str:
-    try:
-        resp = await client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful English-speaking assistant for language learners."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception as e:
-        logger.exception("OpenRouter error")
-        return "⚠️ Ошибка при обращении к языковой модели."
-
+# Обработка текстовых сообщений (простой собеседник: эхо с "пузырем")
 @dp.message()
-async def handle_message(message: types.Message):
-    text = message.text or ""
-    logger.info(f"Received from {message.from_user.id}: {text}")
-    await message.answer("🔍 Думаю…")
-    reply = await get_response(text)
-    await message.answer(reply)
+async def echo_message(message: Message):
+    text = message.text
+    response = f"🗨️ Ты сказал: {text}. Интересно! 🗨️"
+    await message.reply(response)
 
-# webhook
-WEBHOOK_PATH = "/webhook"
-app = web.Application()
-
-async def webhook_handler(request):
-    update = await request.json()
-    await dp.feed_webhook_update(bot, update)
-    return web.Response(status=200)
-
-app.router.add_post(WEBHOOK_PATH, webhook_handler)
-
-async def on_startup(app):
-    webhook_url = RENDER_EXTERNAL_URL.rstrip("/") + WEBHOOK_PATH
+# Webhook setup
+async def on_startup(bot: Bot) -> None:
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"  # Render предоставит hostname; подставьте ваш URL
     await bot.set_webhook(webhook_url)
-    logger.info(f"Webhook set to {webhook_url}")
 
-app.on_startup.append(on_startup)
+if __name__ == '__main__':
+    app = web.Application()
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_requests_handler.register(app, path="/webhook")
+    setup_application(app, dp, bot=bot)
 
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
-    logger.info(f"Starting aiohttp app on port {port}")
-    web.run_app(app, host="0.0.0.0", port=port)
+    # Запуск сервера на $PORT
+    port = int(os.environ.get('PORT', 8080))
+    web.run_app(app, host='0.0.0.0', port=port)
