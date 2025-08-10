@@ -75,6 +75,6 @@ async def on_startup(app):
 app.on_startup.append(on_startup)
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 3000))
+    port = int(os.getenv("PORT", 8080))
     logger.info(f"Starting aiohttp app on port {port}")
     web.run_app(app, host="0.0.0.0", port=port)
