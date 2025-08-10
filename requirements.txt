@@ -1,4 +1,5 @@
-python-telegram-bot==20.8
+python-telegram-bot==20.8  # Удалите, если не используете; иначе оставьте для тестов
 Pillow==11.3.0
 python-dotenv==1.0.0
 aiohttp==3.10.10
+aiogram==3.13.1  # Последняя стабильная на 2025; включает поддержку webhook
