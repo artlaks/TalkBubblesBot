@@ -10,20 +10,27 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 import io
 
+# Логирование
 logging.basicConfig(level=logging.INFO)
+
+# Загрузка переменных окружения
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
-    raise ValueError("TELEGRAM_TOKEN or OPENROUTER_API_KEY not set")
+RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+
+if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY or not RENDER_EXTERNAL_HOSTNAME:
+    raise ValueError("TELEGRAM_TOKEN, OPENROUTER_API_KEY или RENDER_EXTERNAL_HOSTNAME не установлены")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
+# /start
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
     await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу в пузыре!")
 
+# Обработка сообщений
 @dp.message()
 async def handle_message(message: Message):
     try:
@@ -50,6 +57,7 @@ async def handle_message(message: Message):
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
 
+        # Создаём пузырь с текстом
         img = Image.new('RGB', (400, 100), color='white')
         d = ImageDraw.Draw(img)
         try:
@@ -67,16 +75,29 @@ async def handle_message(message: Message):
         logging.error(f"Error: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
+# Установка вебхука при старте
 async def on_startup(app) -> None:
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"
-    await bot.set_webhook(webhook_url)
-    logging.info(f"Webhook set to {webhook_url}")
+    webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+    try:
+        await bot.delete_webhook()
+        await bot.set_webhook(webhook_url, allowed_updates=["message"])
+        logging.info(f"Webhook set to {webhook_url}")
+    except Exception as e:
+        logging.error(f"Failed to set webhook: {str(e)}")
 
 if __name__ == '__main__':
     app = web.Application()
+
+    # Регистрируем webhook обработчик
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path="/webhook")
+
+    # Настраиваем приложение
     setup_application(app, dp, bot=bot)
 
+    # Добавляем on_startup
+    app.on_startup.append(on_startup)
+
     port = int(os.environ.get('PORT', 8080))
+    logging.info(f"Starting server on port {port}")
     web.run_app(app, host='0.0.0.0', port=port)
