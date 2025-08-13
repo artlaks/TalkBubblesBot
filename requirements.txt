@@ -2,3 +2,7 @@ Pillow==11.3.0
 python-dotenv==1.0.0
 aiohttp==3.10.10
 aiogram==3.13.1
+gTTS==2.5.4
+imageio==2.36.0
+numpy==2.1.2
+pydub==0.25.1
