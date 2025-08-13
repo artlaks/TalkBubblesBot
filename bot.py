@@ -96,7 +96,7 @@ async def handle_message(message: Message):
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
 # Webhook setup
-async def on_startup(_: Bot) -> None:
+async def on_startup() -> None:
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
     logging.info(f"Попытка установить webhook: {webhook_url}")
     try:
