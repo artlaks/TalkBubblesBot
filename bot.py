@@ -2,7 +2,7 @@ import os
 import logging
 import aiohttp
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message
+from aiogram.types import Message, InputFile
 from aiogram.filters import Command
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -92,7 +92,7 @@ async def handle_message(message: Message):
 
         # Отправка текста и изображения
         await message.reply(ai_text)
-        await message.reply_photo(img_byte_arr)
+        await message.reply_photo(InputFile(img_byte_arr, filename="bubble.png"))
     except Exception as e:
         logging.error(f"Ошибка: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
