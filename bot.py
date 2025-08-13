@@ -1,82 +1,76 @@
+# bot.py
+
+# ===== Патч для Python 3.13 =====
+import sys, types
+sys.modules['audioop'] = types.ModuleType('audioop')
+
+# ===== Стандартные импорты =====
 import os
-import tempfile
-import subprocess
-from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InputFile
-from gtts import gTTS
+import logging
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from pydub import AudioSegment
+import openai
+import tempfile
 
-# Загружаем переменные окружения
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+# ===== Переменные окружения =====
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
 
-if not all([TELEGRAM_TOKEN, OPENROUTER_API_KEY, RENDER_EXTERNAL_HOSTNAME]):
-    raise ValueError("TELEGRAM_TOKEN, OPENROUTER_API_KEY и RENDER_EXTERNAL_HOSTNAME должны быть заданы в .env")
+# ===== Настройка логирования =====
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher(bot)
+# ===== Настройка OpenAI / OpenRouter =====
+openai.api_key = OPENROUTER_API_KEY
 
-def text_to_speech(text: str) -> str:
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    tmp_file.close()
-    tts = gTTS(text=text, lang="en")
-    tts.save(tmp_file.name)
-    return tmp_file.name
+# ===== Команды Telegram =====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Привет! Я голосовой Telegram-бот. Пришли мне голосовое сообщение.")
 
-def mp3_to_mp4(mp3_path: str) -> str:
-    audio = AudioSegment.from_file(mp3_path)
-    duration_sec = audio.duration_seconds
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отправь голосовое сообщение, и я дам тебе ответ с текстом и переводом.")
 
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-    tmp_file.close()
-    mp4_path = tmp_file.name
+# ===== Обработка голосовых сообщений =====
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    voice = update.message.voice
+    if not voice:
+        await update.message.reply_text("Не удалось получить голосовое сообщение.")
+        return
 
-    # Анимированный фон с несколькими пульсирующими кругами
-    filter_complex = (
-        f"color=c=black:s=480x480:d={duration_sec}[base];"
-        f"[base]drawbox=x=0:y=0:w=iw:h=ih:color=black@0:t=fill[bg];"
-        f"[bg]geq='r=255*sin(2*PI*sqrt((X-240)^2+(Y-240)^2)/50-t*2*PI/5)':"
-        f"g=128: b=255: alpha=255:enable='between(t,0,{duration_sec})'[v];"
-    )
+    # Скачиваем голосовое сообщение
+    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
+        voice_file = f.name
+        await voice.get_file().download_to_drive(voice_file)
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", mp3_path,
-        "-f", "lavfi",
-        "-i", f"color=c=black:s=480x480:d={duration_sec}",
-        "-filter_complex", filter_complex,
-        "-map", "[v]",
-        "-map", "0:a",
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-shortest",
-        mp4_path
-    ]
-    subprocess.run(cmd, check=True)
-    return mp4_path
+    # Конвертируем OGG → WAV с помощью pydub
+    wav_file = voice_file.replace(".ogg", ".wav")
+    AudioSegment.from_ogg(voice_file).export(wav_file, format="wav")
 
-@dp.message_handler(commands=["start"])
-async def cmd_start(message: types.Message):
-    await message.answer("Привет! Отправь мне текст, и я верну видео с озвучкой.")
+    # Открываем WAV и отправляем в OpenRouter / OpenAI
+    with open(wav_file, "rb") as audio:
+        transcript = openai.Audio.transcriptions.create(
+            model="whisper-1",
+            file=audio
+        )
 
-@dp.message_handler()
-async def handle_text(message: types.Message):
-    try:
-        mp3_file = text_to_speech(message.text)
-        mp4_file = mp3_to_mp4(mp3_file)
-        await message.answer_video(InputFile(mp4_file))
-    except Exception as e:
-        await message.answer(f"Произошла ошибка: {e}")
+    text = transcript.text
+    await update.message.reply_text(f"Ты сказал:\n{text}")
+
+# ===== Основная функция =====
+def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+    logger.info("Бот запущен...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    import logging
-    from aiogram import executor
-
-    logging.basicConfig(level=logging.INFO)
-    logging.info(f"Запуск на порту 10000, webhook: https://{RENDER_EXTERNAL_HOSTNAME}/webhook")
-    
-    executor.start_polling(dp, skip_updates=True)
+    main()
