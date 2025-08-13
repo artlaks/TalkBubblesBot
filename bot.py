@@ -27,6 +27,9 @@ if not RENDER_EXTERNAL_HOSTNAME:
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
+# Глобальный объект app для gunicorn
+app = web.Application()
+
 # Команда /start
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
@@ -107,14 +110,13 @@ async def on_startup() -> None:
         logging.error(f"Ошибка установки webhook: {str(e)}")
         raise
 
-if __name__ == '__main__':
-    dp.startup.register(on_startup)
-    
-    app = web.Application()
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    webhook_requests_handler.register(app, path="/webhook")
-    setup_application(app, dp, bot=bot)
+# Настройка приложения
+webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+webhook_requests_handler.register(app, path="/webhook")
+setup_application(app, dp, bot=bot)
+dp.startup.register(on_startup)
 
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
