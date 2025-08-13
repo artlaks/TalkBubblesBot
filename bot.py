@@ -1,6 +1,8 @@
 import os
 import logging
 import aiohttp
+import asyncio
+import tempfile
 import subprocess
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
@@ -31,13 +33,13 @@ dp = Dispatcher()
 # /start
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
-    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу кружком 🎤")
+    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу кружком!")
 
 # Обработка сообщений
 @dp.message()
 async def handle_message(message: Message):
     try:
-        # Получаем ответ от ИИ
+        # 1. Получаем ответ от AI
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -61,26 +63,36 @@ async def handle_message(message: Message):
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
 
-        # Сохраняем MP3
-        tts = gTTS(ai_text, lang="ru")
-        mp3_path = "voice.mp3"
-        tts.save(mp3_path)
+        await message.reply(ai_text)  # Текстовый ответ
 
-        # Конвертируем MP3 в WebM (кружок)
-        webm_path = "circle.webm"
-        subprocess.run([
-            "ffmpeg", "-i", mp3_path, 
-            "-vf", "scale=240:240,format=yuv420p",
-            "-c:v", "libvpx-vp9", 
-            "-c:a", "libopus", 
-            "-b:v", "256k", 
-            "-y", webm_path
-        ], check=True)
+        # 2. Генерация TTS
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as audio_file:
+            tts = gTTS(ai_text, lang="ru")
+            tts.save(audio_file.name)
+            audio_path = audio_file.name
 
-        # Отправляем текст и кружок
-        await message.reply(ai_text)
-        with open(webm_path, "rb") as video:
-            await bot.send_video_note(chat_id=message.chat.id, video_note=video)
+        # 3. Создание кружка через ffmpeg
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as video_file:
+            video_path = video_file.name
+            # Видео с чёрным фоном (кружок)
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-loop", "1",
+                "-f", "lavfi", "-i", "color=c=black:s=240x240:d=5",
+                "-i", audio_path,
+                "-vf", "format=yuv420p,scale=240:240",
+                "-c:v", "libx264", "-tune", "stillimage",
+                "-c:a", "aac", "-shortest",
+                video_path
+            ], check=True)
+
+        # 4. Отправляем кружок
+        with open(video_path, "rb") as video:
+            await message.answer_video_note(video)
+
+        # Удаляем временные файлы
+        os.remove(audio_path)
+        os.remove(video_path)
 
     except Exception as e:
         logging.error(f"Error: {str(e)}")
