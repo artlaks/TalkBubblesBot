@@ -2,5 +2,7 @@ Pillow==11.3.0
 python-dotenv==1.0.0
 aiohttp==3.10.10
 aiogram==3.13.1
-gTTS
+gTTS==2.3.2
 imageio-ffmpeg
+pydub==0.25.1
+ffmpeg-python==0.2.0
