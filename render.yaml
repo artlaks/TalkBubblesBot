@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: talkbubblesbot
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: ./render-build.sh
+    startCommand: python bot.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: RENDER_EXTERNAL_HOSTNAME
+        sync: false
