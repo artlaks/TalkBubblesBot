@@ -1,6 +1,8 @@
 import os
 import logging
 import aiohttp
+import io
+import numpy as np
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
@@ -8,7 +10,8 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
-import io
+from gtts import gTTS
+import imageio
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -35,7 +38,7 @@ app = web.Application()
 # Команда /start
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
-    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу в пузыре!")
+    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу видеосообщением!")
 
 # Команда /setwebhook (для ручной настройки)
 @dp.message(Command(commands=['setwebhook']))
@@ -50,10 +53,55 @@ async def set_webhook_manual(message: Message):
         logging.error(f"Ошибка установки webhook вручную: {str(e)}")
         await message.reply(f"Не удалось установить webhook: {str(e)}")
 
+# Генерация аудио
+def text_to_speech(text: str, lang: str = 'ru') -> bytes:
+    try:
+        tts = gTTS(text=text, lang=lang)
+        audio_bytes = io.BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        return audio_bytes.read()
+    except Exception as e:
+        logging.error(f"Ошибка генерации аудио: {str(e)}")
+        raise
+
+# Генерация анимации
+def create_animation(text: str, duration: float) -> bytes:
+    frames = []
+    width, height = 480, 480
+    num_frames = int(duration * 30)  # 30 fps
+    for i in range(num_frames):
+        img = Image.new('RGB', (width, height), color='black')
+        draw = ImageDraw.Draw(img)
+        # Пульсирующий круг
+        scale = 1.0 + 0.2 * np.sin(2 * np.pi * i / 30)
+        radius = int(100 * scale)
+        draw.ellipse(
+            (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
+            fill='blue'
+        )
+        # Текст
+        try:
+            font = ImageFont.truetype("fonts/arial.ttf", 20)
+        except:
+            font = ImageFont.load_default()
+            logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
+        draw.text((10, 10), text[:50], fill='white', font=font)
+        frames.append(np.array(img))
+    
+    # Создание видео
+    video_bytes = io.BytesIO()
+    with imageio.get_writer(video_bytes, format='mp4', mode='I', fps=30) as writer:
+        for frame in frames:
+            writer.append_data(frame)
+    video_bytes.seek(0)
+    return video_bytes.read()
+
 # Обработка текстовых сообщений
 @dp.message()
 async def handle_message(message: Message):
     try:
+        # Получение ответа от OpenRouter
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -77,22 +125,21 @@ async def handle_message(message: Message):
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
 
-        # Создание "пузыря" с текстом
-        img = Image.new('RGB', (400, 100), color='white')
-        d = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype("fonts/arial.ttf", 20)  # Загрузите шрифт в папку fonts/
-        except:
-            font = ImageFont.load_default()
-            logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
-        d.text((10, 10), ai_text[:50], fill='black', font=font)
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
+        # Генерация аудио
+        audio_data = text_to_speech(ai_text)
+        # Примерная длительность аудио (gTTS не даёт точной длительности, используем 5 сек)
+        duration = 5.0
+        # Генерация видео
+        video_data = create_animation(ai_text, duration)
 
-        # Отправка текста и изображения
+        # Отправка видеосообщения
+        await message.reply_video_note(
+            BufferedInputFile(video_data, filename="video_note.mp4"),
+            duration=int(duration),
+            length=480,  # Ширина видео для кружка
+            supports_streaming=True
+        )
         await message.reply(ai_text)
-        await message.reply_photo(BufferedInputFile(img_byte_arr.read(), filename="bubble.png"))
     except Exception as e:
         logging.error(f"Ошибка: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
