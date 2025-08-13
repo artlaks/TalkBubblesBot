@@ -16,11 +16,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Загрузка переменных окружения
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')  # Для Render, не используется с Puter.js
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'talkbubblesbot.onrender.com')
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set")
+if not OPENROUTER_API_KEY:
+    raise ValueError("OPENROUTER_API_KEY not set")
 if not RENDER_EXTERNAL_HOSTNAME:
     raise ValueError("RENDER_EXTERNAL_HOSTNAME not set")
 
@@ -54,12 +56,9 @@ async def handle_message(message: Message):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                "https://js.puter.com/v2/openrouter/v1/chat/completions",
+                "https://openrouter.ai/api/v1/chat/completions",
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                    "Referer": f"https://{RENDER_EXTERNAL_HOSTNAME}",
-                    "Origin": f"https://{RENDER_EXTERNAL_HOSTNAME}",
-                    "Accept": "application/json",
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "Content-Type": "application/json"
                 },
                 json={
