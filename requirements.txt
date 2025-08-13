@@ -3,3 +3,4 @@ python-dotenv==1.0.0
 aiohttp==3.10.10
 aiogram==3.13.1
 gTTS
+imageio-ffmpeg
