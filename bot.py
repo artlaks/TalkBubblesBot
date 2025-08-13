@@ -27,7 +27,7 @@ if not RENDER_EXTERNAL_HOSTNAME:
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
-# Глобальный объект app для gunicorn
+# Глобальный объект app для aiohttp
 app = web.Application()
 
 # Команда /start
