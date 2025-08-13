@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-set -o errexit
+set -o errexit  # прерывать при ошибках
 
-# Устанавливаем ffmpeg для генерации кружков с голосом
-apt-get update
-apt-get install -y ffmpeg
-
-# Устанавливаем Python-зависимости
-pip install --upgrade pip
-pip install -r requirements.txt
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt --prefer-binary
