@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 import imageio
-from pydub import AudioSegment
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -66,16 +65,16 @@ async def set_webhook_manual(message: Message):
         logging.error(f"Ошибка установки webhook вручную: {str(e)}")
         await message.reply(f"Не удалось установить webhook: {str(e)}")
 
-# Генерация аудио и определение длительности
+# Генерация аудио и оценка длительности
 def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float]:
     try:
         tts = gTTS(text=text, lang=lang)
         audio_bytes = io.BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
-        audio = AudioSegment.from_file(audio_bytes, format="mp3")
-        duration = len(audio) / 1000.0  # Длительность в секундах
-        audio_bytes.seek(0)
+        # Оценка длительности: ~150 слов в минуту (0.4 сек/слово)
+        word_count = len(text.split())
+        duration = max(3.0, word_count * 0.4)  # Минимум 3 секунды
         return audio_bytes.read(), duration
     except Exception as e:
         logging.error(f"Ошибка генерации аудио: {str(e)}")
