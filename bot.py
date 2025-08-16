@@ -42,7 +42,7 @@ app = web.Application()
 
 # Кэширование шрифта
 FONT = None
-def load_font(size=16):  # Уменьшен начальный размер шрифта
+def load_font(size=16):
     global FONT
     if FONT is None or FONT.size != size:
         try:
@@ -118,14 +118,14 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     num_frames = int(duration * 30)  # 30 fps
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
-    frames_per_word = max(1, int(word_duration * 30))  # Кадры на слово
-    max_text_width = width - 40  # Увеличенные отступы
+    frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
+    max_text_width = width - 40  # Отступы
     
     # Попробуем шрифт разного размера
-    font_size = 16  # Уменьшен начальный размер
+    font_size = 16
     font = load_font(font_size)
     lines = split_text_for_display(text, max_text_width, font)
-    while len(lines) > 3 and font_size > 8:  # Ограничим на 3 строки
+    while len(lines) > 4 and font_size > 10:  # Ограничим на 4 строки
         font_size -= 2
         font = load_font(font_size)
         lines = split_text_for_display(text, max_text_width, font)
@@ -144,7 +144,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         current_word_idx = min(len(words) - 1, i // frames_per_word)
         current_text = " ".join(words[:current_word_idx + 1])
         lines = split_text_for_display(current_text, max_text_width, font)
-        for j, line in enumerate(lines[:3]):  # Ограничим на 3 строки
+        for j, line in enumerate(lines[:4]):  # Ограничим на 4 строки
             draw.text((20, 20 + j * (font_size + 5)), line, fill='white', font=font)
         frames.append(np.array(img))
     
@@ -159,7 +159,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         except Exception as e:
             logging.error(f"Ошибка прикрепления аудио: {str(e)}")
             clip = clip  # Продолжаем без аудио, если ошибка
-        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='mp3', fps=30)
+        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
         clip.close()
         if clip.audio:
             clip.audio.close()
@@ -169,6 +169,10 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     with open(temp_video_path, 'rb') as f:
         video_bytes.write(f.read())
     video_bytes.seek(0)
+    
+    # Проверка размера файла
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
+    logging.info(f"Размер видео: {video_size:.2f} МБ")
     
     # Удаление временных файлов
     os.remove(temp_video_path)
@@ -181,6 +185,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
 @dp.message()
 async def handle_message(message: Message):
     try:
+        logging.info(f"Получено сообщение: {message.text}")
         # Получение ответа от OpenRouter
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -204,6 +209,7 @@ async def handle_message(message: Message):
                     raise Exception(f"Ошибка API: {response.status}: {response_text}")
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
+                logging.info(f"Ответ от OpenRouter: {ai_text}")
 
         # Генерация аудио и длительности
         audio_data, duration, audio_path = text_to_speech(ai_text)
@@ -211,15 +217,18 @@ async def handle_message(message: Message):
         video_data = create_animation(ai_text, duration, audio_path)
 
         # Отправка видеосообщения
+        logging.info("Отправка видеосообщения...")
         await message.reply_video_note(
             BufferedInputFile(video_data, filename="video_note.mp4"),
             duration=int(duration),
             length=480,  # Ширина видео для кружка
             supports_streaming=True
         )
+        logging.info("Видеосообщение отправлено")
         await message.reply(ai_text)
+        logging.info("Текстовый ответ отправлен")
     except Exception as e:
-        logging.error(f"Ошибка: {str(e)}")
+        logging.error(f"Ошибка в handle_message: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
 # Webhook setup
