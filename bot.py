@@ -5,6 +5,7 @@ import io
 import numpy as np
 import tempfile
 import warnings
+import re
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
@@ -52,6 +53,24 @@ def load_font(size=16):
             FONT = ImageFont.load_default()
             logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
     return FONT
+
+# Удаление смайликов из текста
+def remove_emojis(text: str) -> str:
+    emoji_pattern = re.compile(
+        "["
+        u"\U0001F600-\U0001F64F"  # Эмодзи (улыбки, лица)
+        u"\U0001F300-\U0001F5FF"  # Символы и пиктограммы
+        u"\U0001F680-\U0001F6FF"  # Транспорт и карты
+        u"\U0001F700-\U0001F77F"  # Алхимические символы
+        u"\U0001F780-\U0001F7FF"  # Геометрические фигуры
+        u"\U0001F800-\U0001F8FF"  # Стрелки
+        u"\U0001F900-\U0001F9FF"  # Дополнительные эмодзи
+        u"\U0001FA00-\U0001FA6F"  # Шахматы и др.
+        u"\U0001FA70-\U0001FAFF"  # Новые эмодзи
+        u"\U00002700-\U000027BF"  # Декоративные символы
+        u"\U00002600-\U000026FF"  # Разные символы
+        "]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
 
 # Команда /start
 @dp.message(Command(commands=['start']))
@@ -124,11 +143,11 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     # Попробуем шрифт разного размера
     font_size = 16
     font = load_font(font_size)
-    lines = split_text_for_display(text, max_text_width, font)
+    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)  # Проверяем последние 4 слова
     while len(lines) > 4 and font_size > 10:  # Ограничим на 4 строки
         font_size -= 2
         font = load_font(font_size)
-        lines = split_text_for_display(text, max_text_width, font)
+        lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
     
     for i in range(num_frames):
         img = Image.new('RGB', (width, height), color='black')
@@ -140,12 +159,15 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
             fill='blue'
         )
-        # Текст, синхронизированный со словами
+        # Текст: последние 3–4 слова, включая текущее
         current_word_idx = min(len(words) - 1, i // frames_per_word)
-        current_text = " ".join(words[:current_word_idx + 1])
+        start_idx = max(0, current_word_idx - 3)  # Показываем до 4 слов (3 предыдущих + текущее)
+        current_text = " ".join(words[start_idx:current_word_idx + 1])
         lines = split_text_for_display(current_text, max_text_width, font)
-        for j, line in enumerate(lines[:4]):  # Ограничим на 4 строки
-            draw.text((20, 20 + j * (font_size + 5)), line, fill='white', font=font)
+        # Размещаем текст в нижней части
+        y_offset = height - (len(lines) * (font_size + 5)) - 20  # 20 пикселей отступ снизу
+        for j, line in enumerate(lines[:4]):
+            draw.text((20, y_offset + j * (font_size + 5)), line, fill='white', font=font)
         frames.append(np.array(img))
     
     # Создание видео с moviepy
@@ -211,10 +233,14 @@ async def handle_message(message: Message):
                 ai_text = data['choices'][0]['message']['content']
                 logging.info(f"Ответ от OpenRouter: {ai_text}")
 
+        # Удаляем смайлики для видео и аудио
+        clean_text = remove_emojis(ai_text)
+        logging.info(f"Текст без смайликов для видео/аудио: {clean_text}")
+
         # Генерация аудио и длительности
-        audio_data, duration, audio_path = text_to_speech(ai_text)
+        audio_data, duration, audio_path = text_to_speech(clean_text)
         # Генерация видео
-        video_data = create_animation(ai_text, duration, audio_path)
+        video_data = create_animation(clean_text, duration, audio_path)
 
         # Отправка видеосообщения
         logging.info("Отправка видеосообщения...")
@@ -225,6 +251,7 @@ async def handle_message(message: Message):
             supports_streaming=True
         )
         logging.info("Видеосообщение отправлено")
+        # Отправка оригинального текста с смайликами
         await message.reply(ai_text)
         logging.info("Текстовый ответ отправлен")
     except Exception as e:
@@ -253,3 +280,4 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
+    
