@@ -12,7 +12,7 @@ from aiohttp import web
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
-from moviepy.editor import ImageSequenceClip
+from moviepy.editor import ImageSequenceClip, AudioFileClip
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -38,12 +38,12 @@ app = web.Application()
 
 # Кэширование шрифта
 FONT = None
-def load_font():
+def load_font(size=20):
     global FONT
-    if FONT is None:
+    if FONT is None or FONT.size != size:
         try:
-            FONT = ImageFont.truetype("fonts/arial.ttf", 20)
-            logging.info("Шрифт arial.ttf успешно загружен")
+            FONT = ImageFont.truetype("fonts/arial.ttf", size)
+            logging.info(f"Шрифт arial.ttf успешно загружен, размер {size}")
         except:
             FONT = ImageFont.load_default()
             logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
@@ -68,7 +68,7 @@ async def set_webhook_manual(message: Message):
         await message.reply(f"Не удалось установить webhook: {str(e)}")
 
 # Генерация аудио и оценка длительности
-def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float]:
+def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
     try:
         tts = gTTS(text=text, lang=lang)
         audio_bytes = io.BytesIO()
@@ -77,16 +77,54 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float]:
         # Оценка длительности: ~150 слов в минуту (0.4 сек/слово)
         word_count = len(text.split())
         duration = max(3.0, word_count * 0.4)  # Минимум 3 секунды
-        return audio_bytes.read(), duration
+        # Сохраняем аудио во временный файл
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
+            temp_audio.write(audio_bytes.read())
+            temp_audio_path = temp_audio.name
+        audio_bytes.seek(0)
+        return audio_bytes.read(), duration, temp_audio_path
     except Exception as e:
         logging.error(f"Ошибка генерации аудио: {str(e)}")
         raise
 
-# Генерация анимации
-def create_animation(text: str, duration: float) -> bytes:
+# Разбиение текста на части для отображения
+def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont) -> list:
+    words = text.split()
+    lines = []
+    current_line = []
+    current_width = 0
+    for word in words:
+        word_width = font.getlength(word + " ")
+        if current_width + word_width <= max_width:
+            current_line.append(word)
+            current_width += word_width
+        else:
+            lines.append(" ".join(current_line))
+            current_line = [word]
+            current_width = word_width
+    if current_line:
+        lines.append(" ".join(current_line))
+    return lines
+
+# Генерация анимации с синхронизированным текстом
+def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
     width, height = 480, 480
     num_frames = int(duration * 30)  # 30 fps
+    words = text.split()
+    word_duration = duration / max(1, len(words))  # Длительность одного слова
+    frames_per_word = max(1, int(word_duration * 30))  # Кадры на слово
+    max_text_width = width - 20  # Отступы
+    
+    # Попробуем шрифт разного размера
+    font_size = 20
+    font = load_font(font_size)
+    lines = split_text_for_display(text, max_text_width, font)
+    while len(lines) > 4 and font_size > 10:  # Ограничим на 4 строки
+        font_size -= 2
+        font = load_font(font_size)
+        lines = split_text_for_display(text, max_text_width, font)
+    
     for i in range(num_frames):
         img = Image.new('RGB', (width, height), color='black')
         draw = ImageDraw.Draw(img)
@@ -97,26 +135,33 @@ def create_animation(text: str, duration: float) -> bytes:
             (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
             fill='blue'
         )
-        # Текст
-        font = load_font()
-        draw.text((10, 10), text[:50], fill='white', font=font)
+        # Текст, синхронизированный со словами
+        current_word_idx = min(len(words) - 1, i // frames_per_word)
+        current_text = " ".join(words[:current_word_idx + 1])
+        lines = split_text_for_display(current_text, max_text_width, font)
+        for j, line in enumerate(lines[:4]):  # Ограничим на 4 строки
+            draw.text((10, 10 + j * (font_size + 5)), line, fill='white', font=font)
         frames.append(np.array(img))
     
     # Создание видео с moviepy
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
-        temp_path = temp_file.name
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+        temp_video_path = temp_video.name
         clip = ImageSequenceClip(frames, fps=30)
-        clip.write_videofile(temp_path, codec='libx264', audio=False, fps=30)
+        audio_clip = AudioFileClip(audio_path)
+        clip = clip.set_audio(audio_clip)
+        clip.write_videofile(temp_video_path, codec='libx264', fps=30, audio_codec='aac')
         clip.close()
+        audio_clip.close()
     
     # Чтение временного файла в BytesIO
     video_bytes = io.BytesIO()
-    with open(temp_path, 'rb') as f:
+    with open(temp_video_path, 'rb') as f:
         video_bytes.write(f.read())
     video_bytes.seek(0)
     
-    # Удаление временного файла
-    os.remove(temp_path)
+    # Удаление временных файлов
+    os.remove(temp_video_path)
+    os.remove(audio_path)
     
     return video_bytes.read()
 
@@ -149,9 +194,9 @@ async def handle_message(message: Message):
                 ai_text = data['choices'][0]['message']['content']
 
         # Генерация аудио и длительности
-        audio_data, duration = text_to_speech(ai_text)
+        audio_data, duration, audio_path = text_to_speech(ai_text)
         # Генерация видео
-        video_data = create_animation(ai_text, duration)
+        video_data = create_animation(ai_text, duration, audio_path)
 
         # Отправка видеосообщения
         await message.reply_video_note(
