@@ -11,7 +11,7 @@ from aiohttp import web
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
-import imageio
+from moviepy.editor import ImageSequenceClip
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -100,11 +100,10 @@ def create_animation(text: str, duration: float) -> bytes:
         draw.text((10, 10), text[:50], fill='white', font=font)
         frames.append(np.array(img))
     
-    # Создание видео
+    # Создание видео с moviepy
     video_bytes = io.BytesIO()
-    with imageio.get_writer(video_bytes, format='mp4', mode='I', fps=30, extension='.mp4') as writer:
-        for frame in frames:
-            writer.append_data(frame)
+    clip = ImageSequenceClip(frames, fps=30)
+    clip.write_videofile(video_bytes, codec='libx264', audio=False, fps=30)
     video_bytes.seek(0)
     return video_bytes.read()
 
