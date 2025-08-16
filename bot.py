@@ -3,6 +3,7 @@ import logging
 import aiohttp
 import io
 import numpy as np
+import tempfile
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
@@ -42,6 +43,7 @@ def load_font():
     if FONT is None:
         try:
             FONT = ImageFont.truetype("fonts/arial.ttf", 20)
+            logging.info("Шрифт arial.ttf успешно загружен")
         except:
             FONT = ImageFont.load_default()
             logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
@@ -101,10 +103,21 @@ def create_animation(text: str, duration: float) -> bytes:
         frames.append(np.array(img))
     
     # Создание видео с moviepy
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+        temp_path = temp_file.name
+        clip = ImageSequenceClip(frames, fps=30)
+        clip.write_videofile(temp_path, codec='libx264', audio=False, fps=30)
+        clip.close()
+    
+    # Чтение временного файла в BytesIO
     video_bytes = io.BytesIO()
-    clip = ImageSequenceClip(frames, fps=30)
-    clip.write_videofile(video_bytes, codec='libx264', audio=False, fps=30)
+    with open(temp_path, 'rb') as f:
+        video_bytes.write(f.read())
     video_bytes.seek(0)
+    
+    # Удаление временного файла
+    os.remove(temp_path)
+    
     return video_bytes.read()
 
 # Обработка текстовых сообщений
