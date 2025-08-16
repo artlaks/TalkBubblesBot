@@ -4,6 +4,7 @@ import aiohttp
 import io
 import numpy as np
 import tempfile
+import warnings
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
@@ -13,6 +14,9 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 from moviepy.editor import ImageSequenceClip, AudioFileClip
+
+# Подавление предупреждений о синтаксисе в moviepy
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -38,7 +42,7 @@ app = web.Application()
 
 # Кэширование шрифта
 FONT = None
-def load_font(size=20):
+def load_font(size=16):  # Уменьшен начальный размер шрифта
     global FONT
     if FONT is None or FONT.size != size:
         try:
@@ -82,6 +86,7 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
             temp_audio.write(audio_bytes.read())
             temp_audio_path = temp_audio.name
         audio_bytes.seek(0)
+        logging.info(f"Аудио создано, длительность: {duration} сек, путь: {temp_audio_path}")
         return audio_bytes.read(), duration, temp_audio_path
     except Exception as e:
         logging.error(f"Ошибка генерации аудио: {str(e)}")
@@ -114,13 +119,13 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
     frames_per_word = max(1, int(word_duration * 30))  # Кадры на слово
-    max_text_width = width - 20  # Отступы
+    max_text_width = width - 40  # Увеличенные отступы
     
     # Попробуем шрифт разного размера
-    font_size = 20
+    font_size = 16  # Уменьшен начальный размер
     font = load_font(font_size)
     lines = split_text_for_display(text, max_text_width, font)
-    while len(lines) > 4 and font_size > 10:  # Ограничим на 4 строки
+    while len(lines) > 3 and font_size > 8:  # Ограничим на 3 строки
         font_size -= 2
         font = load_font(font_size)
         lines = split_text_for_display(text, max_text_width, font)
@@ -139,19 +144,25 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         current_word_idx = min(len(words) - 1, i // frames_per_word)
         current_text = " ".join(words[:current_word_idx + 1])
         lines = split_text_for_display(current_text, max_text_width, font)
-        for j, line in enumerate(lines[:4]):  # Ограничим на 4 строки
-            draw.text((10, 10 + j * (font_size + 5)), line, fill='white', font=font)
+        for j, line in enumerate(lines[:3]):  # Ограничим на 3 строки
+            draw.text((20, 20 + j * (font_size + 5)), line, fill='white', font=font)
         frames.append(np.array(img))
     
     # Создание видео с moviepy
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
         temp_video_path = temp_video.name
         clip = ImageSequenceClip(frames, fps=30)
-        audio_clip = AudioFileClip(audio_path)
-        clip = clip.set_audio(audio_clip)
-        clip.write_videofile(temp_video_path, codec='libx264', fps=30, audio_codec='aac')
+        try:
+            audio_clip = AudioFileClip(audio_path)
+            clip = clip.set_audio(audio_clip)
+            logging.info(f"Аудио прикреплено к видео: {audio_path}")
+        except Exception as e:
+            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
+            clip = clip  # Продолжаем без аудио, если ошибка
+        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='mp3', fps=30)
         clip.close()
-        audio_clip.close()
+        if clip.audio:
+            clip.audio.close()
     
     # Чтение временного файла в BytesIO
     video_bytes = io.BytesIO()
@@ -162,6 +173,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     # Удаление временных файлов
     os.remove(temp_video_path)
     os.remove(audio_path)
+    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
     
     return video_bytes.read()
 
@@ -229,6 +241,6 @@ setup_application(app, dp, bot=bot)
 dp.startup.register(on_startup)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 10000))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
