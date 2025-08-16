@@ -5,6 +5,7 @@ import io
 import numpy as np
 import tempfile
 import warnings
+import re
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
@@ -52,6 +53,24 @@ def load_font(size=16):
             FONT = ImageFont.load_default()
             logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
     return FONT
+
+# Удаление смайликов из текста
+def remove_emojis(text: str) -> str:
+    emoji_pattern = re.compile(
+        "["
+        u"\U0001F600-\U0001F64F"  # Эмодзи (улыбки, лица)
+        u"\U0001F300-\U0001F5FF"  # Символы и пиктограммы
+        u"\U0001F680-\U0001F6FF"  # Транспорт и карты
+        u"\U0001F700-\U0001F77F"  # Алхимические символы
+        u"\U0001F780-\U0001F7FF"  # Геометрические фигуры
+        u"\U0001F800-\U0001F8FF"  # Стрелки
+        u"\U0001F900-\U0001F9FF"  # Дополнительные эмодзи
+        u"\U0001FA00-\U0001FA6F"  # Шахматы и др.
+        u"\U0001FA70-\U0001FAFF"  # Новые эмодзи
+        u"\U00002700-\U000027BF"  # Декоративные символы
+        u"\U00002600-\U000026FF"  # Разные символы
+        "]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
 
 # Команда /start
 @dp.message(Command(commands=['start']))
@@ -119,23 +138,26 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
     frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
-    max_text_width = width - 40  # Отступы
-    line_height = 25  # Высота строки для расчёта смещения
+    max_text_width = 400  # Ограничение ширины для круга (диаметр ~480)
     
     # Попробуем шрифт разного размера
     font_size = 16
     font = load_font(font_size)
-    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)  # Проверяем последние 4 слова
-    while len(lines) > 4 and font_size > 10:  # Ограничим на 4 строки
+    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
+    while len(lines) > 2 and font_size > 10:  # Ограничим на 2 строки для текущего текста
         font_size -= 2
         font = load_font(font_size)
         lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
     
-    # Координаты для текста в границах кружка (центр, нижняя часть)
-    text_y_base = height - 120  # Нижняя часть, отступ от низа
+    # Шрифт для старого текста (на 20% меньше)
+    old_font_size = int(font_size * 0.8)
+    old_font = load_font(old_font_size)
+    
+    # Координаты для текста в границах кружка
+    text_y_base = height - 80  # Базовая позиция для текущего текста (внизу круга)
 
     for i in range(num_frames):
-        img = Image.new('RGB', (width, height), color='black')
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 255))  # RGBA для прозрачности
         draw = ImageDraw.Draw(img)
         # Пульсирующий круг
         scale = 1.0 + 0.2 * np.sin(2 * np.pi * i / 30)
@@ -144,15 +166,26 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
             fill='blue'
         )
-        # Текст: последние 3–4 слова, включая текущее
+        # Текущий текст: 3–4 последних слова
         current_word_idx = min(len(words) - 1, i // frames_per_word)
-        start_idx = max(0, current_word_idx - 3)  # Показываем до 4 слов (3 предыдущих + текущее)
+        start_idx = max(0, current_word_idx - 3)  # До 4 слов
         current_text = " ".join(words[start_idx:current_word_idx + 1])
-        lines = split_text_for_display(current_text, max_text_width, font)
-        # Размещаем текст в нижней части
-        y_offset = text_y_base - (len(lines) * line_height)  # Расчёт от низа
-        for j, line in enumerate(lines[:4]):
-            draw.text((20, y_offset + j * line_height), line, fill='white', font=font)
+        current_lines = split_text_for_display(current_text, max_text_width, font)
+        y_offset = text_y_base - (len(current_lines) * (font_size + 5))
+        for j, line in enumerate(current_lines[:2]):  # Ограничим на 2 строки
+            draw.text((40, y_offset + j * (font_size + 5)), line, fill=(255, 255, 255, 255), font=font)
+        
+        # Старый текст: предыдущие слова, смещённые вверх
+        if start_idx > 0:
+            old_start_idx = max(0, start_idx - 4)
+            old_text = " ".join(words[old_start_idx:start_idx])
+            old_lines = split_text_for_display(old_text, max_text_width, old_font)
+            old_y_offset = y_offset - (len(old_lines) * (old_font_size + 5)) - 10
+            for j, line in enumerate(old_lines[:2]):  # Ограничим на 2 строки
+                draw.text((40, old_y_offset + j * (old_font_size + 5)), line, fill=(255, 255, 255, 128), font=old_font)
+        
+        # Конвертация в RGB для moviepy
+        img = img.convert('RGB')
         frames.append(np.array(img))
     
     # Создание видео с moviepy
@@ -165,20 +198,20 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             logging.info(f"Аудио прикреплено к видео: {audio_path}")
         except Exception as e:
             logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip  # Продолжаем без аудио, если ошибка
+            clip = clip
         clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
         clip.close()
         if clip.audio:
             clip.audio.close()
     
-    # Чтение временного файла в BytesIO
+    # Чтение временного файла
     video_bytes = io.BytesIO()
     with open(temp_video_path, 'rb') as f:
         video_bytes.write(f.read())
     video_bytes.seek(0)
     
     # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)
     logging.info(f"Размер видео: {video_size:.2f} МБ")
     
     # Удаление временных файлов
@@ -232,7 +265,7 @@ async def handle_message(message: Message):
         await message.reply_video_note(
             BufferedInputFile(video_data, filename="video_note.mp4"),
             duration=int(duration),
-            length=480,  # Ширина видео для кружка
+            length=480,
             supports_streaming=True
         )
         logging.info("Видеосообщение отправлено")
@@ -265,4 +298,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
-</xaiArtifact>
