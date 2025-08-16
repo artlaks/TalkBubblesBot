@@ -5,7 +5,6 @@ import io
 import numpy as np
 import tempfile
 import warnings
-import re
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
@@ -53,24 +52,6 @@ def load_font(size=16):
             FONT = ImageFont.load_default()
             logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
     return FONT
-
-# Удаление смайликов из текста
-def remove_emojis(text: str) -> str:
-    emoji_pattern = re.compile(
-        "["
-        u"\U0001F600-\U0001F64F"  # Эмодзи (улыбки, лица)
-        u"\U0001F300-\U0001F5FF"  # Символы и пиктограммы
-        u"\U0001F680-\U0001F6FF"  # Транспорт и карты
-        u"\U0001F700-\U0001F77F"  # Алхимические символы
-        u"\U0001F780-\U0001F7FF"  # Геометрические фигуры
-        u"\U0001F800-\U0001F8FF"  # Стрелки
-        u"\U0001F900-\U0001F9FF"  # Дополнительные эмодзи
-        u"\U0001FA00-\U0001FA6F"  # Шахматы и др.
-        u"\U0001FA70-\U0001FAFF"  # Новые эмодзи
-        u"\U00002700-\U000027BF"  # Декоративные символы
-        u"\U00002600-\U000026FF"  # Разные символы
-        "]+", flags=re.UNICODE)
-    return emoji_pattern.sub(r'', text)
 
 # Команда /start
 @dp.message(Command(commands=['start']))
@@ -139,6 +120,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     word_duration = duration / max(1, len(words))  # Длительность одного слова
     frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
     max_text_width = width - 40  # Отступы
+    line_height = 25  # Высота строки для расчёта смещения
     
     # Попробуем шрифт разного размера
     font_size = 16
@@ -149,6 +131,9 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         font = load_font(font_size)
         lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
     
+    # Координаты для текста в границах кружка (центр, нижняя часть)
+    text_y_base = height - 120  # Нижняя часть, отступ от низа
+
     for i in range(num_frames):
         img = Image.new('RGB', (width, height), color='black')
         draw = ImageDraw.Draw(img)
@@ -165,9 +150,9 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         current_text = " ".join(words[start_idx:current_word_idx + 1])
         lines = split_text_for_display(current_text, max_text_width, font)
         # Размещаем текст в нижней части
-        y_offset = height - (len(lines) * (font_size + 5)) - 20  # 20 пикселей отступ снизу
+        y_offset = text_y_base - (len(lines) * line_height)  # Расчёт от низа
         for j, line in enumerate(lines[:4]):
-            draw.text((20, y_offset + j * (font_size + 5)), line, fill='white', font=font)
+            draw.text((20, y_offset + j * line_height), line, fill='white', font=font)
         frames.append(np.array(img))
     
     # Создание видео с moviepy
@@ -280,4 +265,4 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
-    
+</xaiArtifact>
