@@ -138,23 +138,24 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
     frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
-    max_text_width = 400  # Ограничение ширины для круга (диаметр ~480)
+    max_text_width = 400  # Ограничение ширины для круга
     
     # Попробуем шрифт разного размера
     font_size = 16
     font = load_font(font_size)
-    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
+    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)  # Проверяем последние 4 слова
     while len(lines) > 2 and font_size > 10:  # Ограничим на 2 строки для текущего текста
         font_size -= 2
         font = load_font(font_size)
         lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
     
-    # Шрифт для старого текста (на 20% меньше)
+    # Шрифт для старого текста
     old_font_size = int(font_size * 0.8)
     old_font = load_font(old_font_size)
     
     # Координаты для текста в границах кружка
-    text_y_base = height - 80  # Базовая позиция для текущего текста (внизу круга)
+    text_y_current = height - 100  # Фиксированная позиция для нового текста (нижняя часть)
+    text_y_old = text_y_current - 80  # Позиция для старого текста (выше)
 
     for i in range(num_frames):
         img = Image.new('RGBA', (width, height), (0, 0, 0, 255))  # RGBA для прозрачности
@@ -166,23 +167,23 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
             fill='blue'
         )
-        # Текущий текст: 3–4 последних слова
+        # Текущий текст: 3–4 последних слова, в фиксированной позиции
         current_word_idx = min(len(words) - 1, i // frames_per_word)
         start_idx = max(0, current_word_idx - 3)  # До 4 слов
         current_text = " ".join(words[start_idx:current_word_idx + 1])
         current_lines = split_text_for_display(current_text, max_text_width, font)
-        y_offset = text_y_base - (len(current_lines) * (font_size + 5))
-        for j, line in enumerate(current_lines[:2]):  # Ограничим на 2 строки
+        y_offset = text_y_current
+        for j, line in enumerate(current_lines[:2]):
             draw.text((40, y_offset + j * (font_size + 5)), line, fill=(255, 255, 255, 255), font=font)
         
-        # Старый текст: предыдущие слова, смещённые вверх
+        # Старый текст: предыдущие слова, смещённые вверх с прозрачностью
         if start_idx > 0:
             old_start_idx = max(0, start_idx - 4)
             old_text = " ".join(words[old_start_idx:start_idx])
             old_lines = split_text_for_display(old_text, max_text_width, old_font)
-            old_y_offset = y_offset - (len(old_lines) * (old_font_size + 5)) - 10
-            for j, line in enumerate(old_lines[:2]):  # Ограничим на 2 строки
-                draw.text((40, old_y_offset + j * (old_font_size + 5)), line, fill=(255, 255, 255, 128), font=old_font)
+            y_offset = text_y_old
+            for j, line in enumerate(old_lines[:2]):
+                draw.text((40, y_offset + j * (old_font_size + 5)), line, fill=(255, 255, 255, 128), font=old_font)
         
         # Конвертация в RGB для moviepy
         img = img.convert('RGB')
@@ -198,20 +199,20 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             logging.info(f"Аудио прикреплено к видео: {audio_path}")
         except Exception as e:
             logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip
+            clip = clip  # Продолжаем без аудио, если ошибка
         clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
         clip.close()
         if clip.audio:
             clip.audio.close()
     
-    # Чтение временного файла
+    # Чтение временного файла в BytesIO
     video_bytes = io.BytesIO()
     with open(temp_video_path, 'rb') as f:
         video_bytes.write(f.read())
     video_bytes.seek(0)
     
     # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
     logging.info(f"Размер видео: {video_size:.2f} МБ")
     
     # Удаление временных файлов
@@ -265,7 +266,7 @@ async def handle_message(message: Message):
         await message.reply_video_note(
             BufferedInputFile(video_data, filename="video_note.mp4"),
             duration=int(duration),
-            length=480,
+            length=480,  # Ширина видео для кружка
             supports_streaming=True
         )
         logging.info("Видеосообщение отправлено")
