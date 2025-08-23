@@ -72,6 +72,10 @@ def remove_emojis(text: str) -> str:
         "]+", flags=re.UNICODE)
     return emoji_pattern.sub(r'', text)
 
+# Разбиение текста на фразы
+def split_into_phrases(text: str) -> list:
+    return re.split('[.!?]+', text.strip())
+
 # Команда /start
 @dp.message(Command(commands=['start']))
 async def send_welcome(message: Message):
@@ -100,7 +104,6 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
         # Оценка длительности: ~150 слов в минуту (0.4 сек/слово)
         word_count = len(text.split())
         duration = max(3.0, word_count * 0.4)  # Минимум 3 секунды
-        # Сохраняем аудио во временный файл
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
             temp_audio.write(audio_bytes.read())
             temp_audio_path = temp_audio.name
@@ -130,35 +133,37 @@ def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont)
         lines.append(" ".join(current_line))
     return lines
 
-# Генерация анимации с синхронизированным текстом
+# Генерация анимации с статичным текстом
 def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
     width, height = 480, 480
     num_frames = int(duration * 30)  # 30 fps
+    phrases = [p.strip() for p in split_into_phrases(text) if p.strip()]
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
-    frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
-    max_text_width = 400  # Ограничение ширины для круга
-    
-    # Попробуем шрифт разного размера
+    frames_per_word = max(1, int(word_duration * 30 * 0.9))
+
+    # Определяем шрифт
     font_size = 16
     font = load_font(font_size)
-    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)  # Проверяем последние 4 слова
-    while len(lines) > 2 and font_size > 10:  # Ограничим на 2 строки для текущего текста
+    max_text_width = 400  # Ограничение ширины для круга
+    current_lines = split_text_for_display(" ".join(words[:4]), max_text_width, font)
+    while len(current_lines) > 2 and font_size > 10:
         font_size -= 2
         font = load_font(font_size)
-        lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
-    
-    # Шрифт для старого текста
-    old_font_size = int(font_size * 0.8)
-    old_font = load_font(old_font_size)
-    
-    # Координаты для текста в границах кружка
-    text_y_current = height - 100  # Фиксированная позиция для нового текста (нижняя часть)
-    text_y_old = text_y_current - 80  # Позиция для старого текста (выше)
+        current_lines = split_text_for_display(" ".join(words[:4]), max_text_width, font)
+
+    # Координаты текста в границах кружка
+    text_y_current = height - 150  # Текущий текст сверху
+    text_y_next = height - 50  # Будущий текст снизу
+
+    # Индекс текущей фразы
+    current_phrase_idx = 0
+    current_word_idx = 0
+    phrase_start_frame = 0
 
     for i in range(num_frames):
-        img = Image.new('RGBA', (width, height), (0, 0, 0, 255))  # RGBA для прозрачности
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 255))
         draw = ImageDraw.Draw(img)
         # Пульсирующий круг
         scale = 1.0 + 0.2 * np.sin(2 * np.pi * i / 30)
@@ -167,28 +172,38 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
             fill='blue'
         )
-        # Текущий текст: 3–4 последних слова, в фиксированной позиции
-        current_word_idx = min(len(words) - 1, i // frames_per_word)
-        start_idx = max(0, current_word_idx - 3)  # До 4 слов
-        current_text = " ".join(words[start_idx:current_word_idx + 1])
-        current_lines = split_text_for_display(current_text, max_text_width, font)
-        y_offset = text_y_current
-        for j, line in enumerate(current_lines[:2]):
-            draw.text((40, y_offset + j * (font_size + 5)), line, fill=(255, 255, 255, 255), font=font)
-        
-        # Старый текст: предыдущие слова, смещённые вверх с прозрачностью
-        if start_idx > 0:
-            old_start_idx = max(0, start_idx - 4)
-            old_text = " ".join(words[old_start_idx:start_idx])
-            old_lines = split_text_for_display(old_text, max_text_width, old_font)
-            y_offset = text_y_old
-            for j, line in enumerate(old_lines[:2]):
-                draw.text((40, y_offset + j * (old_font_size + 5)), line, fill=(255, 255, 255, 128), font=old_font)
-        
+
+        # Определяем текущую и следующую фразу
+        total_words = len(words)
+        if current_word_idx < total_words:
+            current_frame_idx = i - phrase_start_frame
+            words_so_far = len(" ".join(words[:current_word_idx + 1]).split())
+            phrase_words = len(phrases[current_phrase_idx].split()) if current_phrase_idx < len(phrases) else 0
+            if current_frame_idx >= phrase_words * frames_per_word and current_phrase_idx + 1 < len(phrases):
+                current_phrase_idx += 1
+                phrase_start_frame = i
+                current_word_idx = sum(len(p.split()) for p in phrases[:current_phrase_idx])
+
+            # Текущая фраза (сверху)
+            if current_phrase_idx < len(phrases):
+                current_text = phrases[current_phrase_idx]
+                current_lines = split_text_for_display(current_text, max_text_width, font)
+                y_offset = text_y_current
+                for j, line in enumerate(current_lines[:2]):
+                    draw.text((40, y_offset + j * (font_size + 5)), line, fill=(255, 255, 255, 255), font=font)
+
+            # Следующая фраза (снизу)
+            if current_phrase_idx + 1 < len(phrases):
+                next_text = phrases[current_phrase_idx + 1]
+                next_lines = split_text_for_display(next_text, max_text_width, font)
+                y_offset = text_y_next
+                for j, line in enumerate(next_lines[:2]):
+                    draw.text((40, y_offset + j * (font_size + 5)), line, fill=(255, 255, 255, 255), font=font)
+
         # Конвертация в RGB для moviepy
         img = img.convert('RGB')
         frames.append(np.array(img))
-    
+
     # Создание видео с moviepy
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
         temp_video_path = temp_video.name
@@ -199,27 +214,27 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             logging.info(f"Аудио прикреплено к видео: {audio_path}")
         except Exception as e:
             logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip  # Продолжаем без аудио, если ошибка
+            clip = clip
         clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
         clip.close()
         if clip.audio:
             clip.audio.close()
-    
-    # Чтение временного файла в BytesIO
+
+    # Чтение временного файла
     video_bytes = io.BytesIO()
     with open(temp_video_path, 'rb') as f:
         video_bytes.write(f.read())
     video_bytes.seek(0)
-    
+
     # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)
     logging.info(f"Размер видео: {video_size:.2f} МБ")
-    
+
     # Удаление временных файлов
     os.remove(temp_video_path)
     os.remove(audio_path)
     logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
-    
+
     return video_bytes.read()
 
 # Обработка текстовых сообщений
@@ -266,7 +281,7 @@ async def handle_message(message: Message):
         await message.reply_video_note(
             BufferedInputFile(video_data, filename="video_note.mp4"),
             duration=int(duration),
-            length=480,  # Ширина видео для кружка
+            length=480,
             supports_streaming=True
         )
         logging.info("Видеосообщение отправлено")
