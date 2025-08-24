@@ -29,11 +29,15 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'talkbubblesbot.onrender.com')
 
 if not TELEGRAM_TOKEN:
+    logging.error("TELEGRAM_TOKEN not set")
     raise ValueError("TELEGRAM_TOKEN not set")
 if not OPENROUTER_API_KEY:
+    logging.error("OPENROUTER_API_KEY not set")
     raise ValueError("OPENROUTER_API_KEY not set")
 if not RENDER_EXTERNAL_HOSTNAME:
+    logging.error("RENDER_EXTERNAL_HOSTNAME not set")
     raise ValueError("RENDER_EXTERNAL_HOSTNAME not set")
+logging.info(f"Environment variables loaded: TOKEN={TELEGRAM_TOKEN[:5]}..., API_KEY={OPENROUTER_API_KEY[:5]}..., HOST={RENDER_EXTERNAL_HOSTNAME}")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -49,9 +53,9 @@ def load_font(size=16):
         try:
             FONT = ImageFont.truetype("fonts/arial.ttf", size)
             logging.info(f"Шрифт arial.ttf успешно загружен, размер {size}")
-        except:
+        except Exception as e:
+            logging.warning(f"Шрифт arial.ttf не найден: {str(e)}, используется дефолтный")
             FONT = ImageFont.load_default()
-            logging.warning("Шрифт arial.ttf не найден, используется дефолтный")
     return FONT
 
 # Удаление смайликов из текста
@@ -187,6 +191,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
                 current_phrase_idx += 1
                 phrase_start_frame = i
                 current_word_idx = sum(len(p.split()) for p in phrases[:current_phrase_idx])
+                logging.info(f"Смена фразы: текущая={current_phrase_idx}, слово={current_word_idx}")
 
             # Текущая фраза (сверху)
             if current_phrase_idx < len(phrases):
@@ -227,4 +232,96 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             clip.audio.close()
 
     # Чтение временного файла
-    video_bytes = io
+    video_bytes = io.BytesIO()
+    with open(temp_video_path, 'rb') as f:
+        video_bytes.write(f.read())
+    video_bytes.seek(0)
+
+    # Проверка размера файла
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)
+    logging.info(f"Размер видео: {video_size:.2f} МБ")
+
+    # Удаление временных файлов
+    os.remove(temp_video_path)
+    os.remove(audio_path)
+    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
+
+    return video_bytes.read()
+
+# Обработка текстовых сообщений
+@dp.message()
+async def handle_message(message: Message):
+    try:
+        logging.info(f"Получено сообщение: {message.text}")
+        # Получение ответа от OpenRouter
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "google/gemma-2-9b-it:free",
+                    "messages": [
+                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, отвечай на русском с юмором."},
+                        {"role": "user", "content": message.text}
+                    ],
+                    "max_tokens": 150
+                }
+            ) as response:
+                if response.status != 200:
+                    response_text = await response.text()
+                    logging.error(f"Ошибка API: {response.status}, Ответ: {response_text}")
+                    raise Exception(f"Ошибка API: {response.status}: {response_text}")
+                data = await response.json()
+                ai_text = data['choices'][0]['message']['content']
+                logging.info(f"Ответ от OpenRouter: {ai_text}")
+
+        # Удаляем смайлики для видео и аудио
+        clean_text = remove_emojis(ai_text)
+        logging.info(f"Текст без смайликов для видео/аудио: {clean_text}")
+
+        # Генерация аудио и длительности
+        audio_data, duration, audio_path = text_to_speech(clean_text)
+        # Генерация видео
+        video_data = create_animation(clean_text, duration, audio_path)
+
+        # Отправка видеосообщения
+        logging.info("Отправка видеосообщения...")
+        await message.reply_video_note(
+            BufferedInputFile(video_data, filename="video_note.mp4"),
+            duration=int(duration),
+            length=480,
+            supports_streaming=True
+        )
+        logging.info("Видеосообщение отправлено")
+        # Отправка оригинального текста с смайликами
+        await message.reply(ai_text)
+        logging.info("Текстовый ответ отправлен")
+    except Exception as e:
+        logging.error(f"Ошибка в handle_message: {str(e)}")
+        await message.reply(f"Ой, что-то пошло не так: {str(e)}")
+
+# Webhook setup
+async def on_startup() -> None:
+    webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+    logging.info(f"Попытка установить webhook: {webhook_url}")
+    try:
+        await bot.delete_webhook()
+        await bot.set_webhook(webhook_url, allowed_updates=["message"])
+        logging.info(f"Webhook успешно установлен: {webhook_url}")
+    except Exception as e:
+        logging.error(f"Ошибка установки webhook: {str(e)}")
+        raise
+
+# Настройка приложения
+webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+webhook_requests_handler.register(app, path="/webhook")
+setup_application(app, dp, bot=bot)
+dp.startup.register(on_startup)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    logging.info(f"Запуск сервера на порту {port}")
+    web.run_app(app, host='0.0.0.0', port=port)
