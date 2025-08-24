@@ -105,7 +105,6 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
         audio_bytes = io.BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
-        # Оценка длительности: ~150 слов в минуту (0.5 сек/слово)
         word_count = len(text.split())
         duration = max(3.0, word_count * 0.5)  # Минимум 3 секунды
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
@@ -147,7 +146,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     word_duration = duration / max(1, len(words))  # Длительность одного слова
     frames_per_word = max(1, int(word_duration * 30 * 0.9))
 
-    # Определяем шрифт
     font_size = 16
     font = load_font(font_size)
     max_text_width = 400  # Ограничение ширины для круга
@@ -157,15 +155,12 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         font = load_font(font_size)
         current_lines = split_text_for_display(" ".join(words[:4]), max_text_width, font)
 
-    # Шрифт для будущего текста
     future_font_size = int(font_size * 0.7)
     future_font = load_font(future_font_size)
 
-    # Координаты для текста в нижней части кружка
     text_y_current = height - 120  # Текущий текст
     text_y_future = height - 60   # Будущий текст, ближе к текущему
 
-    # Индекс текущей фразы
     current_phrase_idx = 0
     current_word_idx = 0
     phrase_start_frame = 0
@@ -173,7 +168,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     for i in range(num_frames):
         img = Image.new('RGB', (width, height), color='black')
         draw = ImageDraw.Draw(img)
-        # Пульсирующий круг
         scale = 1.0 + 0.2 * np.sin(2 * np.pi * i / 30)
         radius = int(100 * scale)
         draw.ellipse(
@@ -181,7 +175,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             fill='blue'
         )
 
-        # Определяем текущую и следующую фразу
         total_words = len(words)
         if current_word_idx < total_words:
             current_frame_idx = i - phrase_start_frame
@@ -193,7 +186,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
                 current_word_idx = sum(len(p.split()) for p in phrases[:current_phrase_idx])
                 logging.info(f"Смена фразы: текущая={current_phrase_idx}, слово={current_word_idx}")
 
-            # Текущая фраза (сверху)
             if current_phrase_idx < len(phrases):
                 current_text = phrases[current_phrase_idx]
                 current_lines = split_text_for_display(current_text, max_text_width, font)
@@ -203,7 +195,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
                     x_offset = (width - text_width) / 2
                     draw.text((x_offset, y_offset + j * (font_size + 5)), line, fill='white', font=font)
 
-            # Следующая фраза (снизу)
             if current_phrase_idx + 1 < len(phrases):
                 future_text = phrases[current_phrase_idx + 1]
                 future_lines = split_text_for_display(future_text, max_text_width, future_font)
@@ -215,7 +206,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
 
         frames.append(np.array(img))
 
-    # Создание видео с moviepy
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
         temp_video_path = temp_video.name
         clip = ImageSequenceClip(frames, fps=30)
@@ -231,17 +221,14 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
         if clip.audio:
             clip.audio.close()
 
-    # Чтение временного файла
     video_bytes = io.BytesIO()
     with open(temp_video_path, 'rb') as f:
         video_bytes.write(f.read())
     video_bytes.seek(0)
 
-    # Проверка размера файла
     video_size = len(video_bytes.getvalue()) / (1024 * 1024)
     logging.info(f"Размер видео: {video_size:.2f} МБ")
 
-    # Удаление временных файлов
     os.remove(temp_video_path)
     os.remove(audio_path)
     logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
@@ -252,8 +239,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
 @dp.message()
 async def handle_message(message: Message):
     try:
-        logging.info(f"Получено сообщение: {message.text}")
-        # Получение ответа от OpenRouter
+        logging.info(f"Получено сообщение от {message.from_user.username}: {message.text}")
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -272,22 +258,18 @@ async def handle_message(message: Message):
             ) as response:
                 if response.status != 200:
                     response_text = await response.text()
-                    logging.error(f"Ошибка API: {response.status}, Ответ: {response_text}")
+                    logging.error(f"Ошибка API OpenRouter: {response.status}, Ответ: {response_text}")
                     raise Exception(f"Ошибка API: {response.status}: {response_text}")
                 data = await response.json()
                 ai_text = data['choices'][0]['message']['content']
                 logging.info(f"Ответ от OpenRouter: {ai_text}")
 
-        # Удаляем смайлики для видео и аудио
         clean_text = remove_emojis(ai_text)
         logging.info(f"Текст без смайликов для видео/аудио: {clean_text}")
 
-        # Генерация аудио и длительности
         audio_data, duration, audio_path = text_to_speech(clean_text)
-        # Генерация видео
         video_data = create_animation(clean_text, duration, audio_path)
 
-        # Отправка видеосообщения
         logging.info("Отправка видеосообщения...")
         await message.reply_video_note(
             BufferedInputFile(video_data, filename="video_note.mp4"),
@@ -296,12 +278,11 @@ async def handle_message(message: Message):
             supports_streaming=True
         )
         logging.info("Видеосообщение отправлено")
-        # Отправка оригинального текста с смайликами
         await message.reply(ai_text)
         logging.info("Текстовый ответ отправлен")
     except Exception as e:
         logging.error(f"Ошибка в handle_message: {str(e)}")
-        await message.reply(f"Ой, что-то пошло не так: {str(e)}")
+        await message.reply(f"Произошла ошибка: {str(e)}. Пожалуйста, проверьте логи.")
 
 # Webhook setup
 async def on_startup() -> None:
@@ -315,7 +296,6 @@ async def on_startup() -> None:
         logging.error(f"Ошибка установки webhook: {str(e)}")
         raise
 
-# Настройка приложения
 webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
 webhook_requests_handler.register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
