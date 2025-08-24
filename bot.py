@@ -136,32 +136,26 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     width, height = 480, 480
     num_frames = int(duration * 30)  # 30 fps
     words = text.split()
+    word_duration = duration / max(1, len(words))  # Длительность одного слова
+    frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
     max_text_width = 400  # Ограничение ширины для круга
     
     # Попробуем шрифт разного размера
     font_size = 16
     font = load_font(font_size)
-    lines = split_text_for_display(text, max_text_width, font)
-    while len(lines) > 2 and font_size > 10:  # Ограничим на 2 строки
+    lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
+    while len(lines) > 2 and font_size > 10:  # Ограничим на 2 строки для текущего текста
         font_size -= 2
         font = load_font(font_size)
-        lines = split_text_for_display(text, max_text_width, font)
+        lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
     
     # Шрифт для будущего текста
     future_font_size = int(font_size * 0.8)
     future_font = load_font(future_font_size)
     
-    # Разбиение текста на текущий и будущий
-    half_index = len(words) // 2
-    current_text = " ".join(words[:half_index])
-    future_text = " ".join(words[half_index:]) if half_index < len(words) else ""
-    
-    current_lines = split_text_for_display(current_text, max_text_width, font)
-    future_lines = split_text_for_display(future_text, max_text_width, future_font) if future_text else []
-    
-    # Координаты для текста в нижней части кружка
-    text_y_current = height - 150  # Текущий текст ниже
-    text_y_future = text_y_current + font_size + 10  # Будущий текст ближе, интервал 10 пикселей
+    # Координаты для текста в границах кружка
+    text_y_current = height - 120  # Текущий текст
+    text_y_future = height - 60   # Будущий текст, ближе к текущему
 
     for i in range(num_frames):
         img = Image.new('RGB', (width, height), color='black')
@@ -173,15 +167,23 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
             fill='blue'
         )
-        # Статичный текущий текст
+        # Текущий текст: 3–4 последних слова, выравнивание по центру
+        current_word_idx = min(len(words) - 1, i // frames_per_word)
+        start_idx = max(0, current_word_idx - 3)  # До 4 слов
+        current_text = " ".join(words[start_idx:current_word_idx + 1])
+        current_lines = split_text_for_display(current_text, max_text_width, font)
         y_offset = text_y_current
         for j, line in enumerate(current_lines[:2]):
             text_width = font.getlength(line)
             x_offset = (width - text_width) / 2
             draw.text((x_offset, y_offset + j * (font_size + 5)), line, fill='white', font=font)
         
-        # Статичный будущий текст
-        if future_lines:
+        # Будущий текст: следующие 3–4 слова, выравнивание по центру
+        future_start_idx = current_word_idx + 1
+        future_end_idx = min(len(words), future_start_idx + 4)
+        future_text = " ".join(words[future_start_idx:future_end_idx])
+        if future_text:
+            future_lines = split_text_for_display(future_text, max_text_width, future_font)
             y_offset = text_y_future
             for j, line in enumerate(future_lines[:2]):
                 text_width = future_font.getlength(line)
@@ -300,5 +302,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
-
-
