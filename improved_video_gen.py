@@ -157,6 +157,65 @@ class ImprovedVideoGenerator:
         out.release()
         return output_path
     
+    def generate_video_with_audio(self, text, audio_path, output_path="video_with_audio.mp4", duration=None):
+        """Генерирует видео с текстом и аудио"""
+        # Если длительность не указана, определяем по аудио
+        if duration is None:
+            duration = self.get_audio_duration(audio_path)
+        
+        # Создаем видео без аудио
+        temp_video_path = f"temp_{output_path}"
+        self.generate_video(text, temp_video_path, duration)
+        
+        # Добавляем аудио к видео
+        self.add_audio_to_video(temp_video_path, audio_path, output_path)
+        
+        # Удаляем временный файл
+        if os.path.exists(temp_video_path):
+            os.remove(temp_video_path)
+        
+        return output_path
+    
+    def get_audio_duration(self, audio_path):
+        """Получает длительность аудиофайла"""
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_file(audio_path)
+            return len(audio) / 1000.0  # Конвертируем в секунды
+        except Exception as e:
+            print(f"Ошибка при получении длительности аудио: {e}")
+            return 4.0  # Возвращаем стандартную длительность
+    
+    def add_audio_to_video(self, video_path, audio_path, output_path):
+        """Добавляет аудио к видео"""
+        try:
+            from moviepy.editor import VideoFileClip, AudioFileClip
+            
+            # Загружаем видео и аудио
+            video = VideoFileClip(video_path)
+            audio = AudioFileClip(audio_path)
+            
+            # Обрезаем аудио до длительности видео
+            if audio.duration > video.duration:
+                audio = audio.subclip(0, video.duration)
+            
+            # Добавляем аудио к видео
+            final_video = video.set_audio(audio)
+            
+            # Сохраняем результат
+            final_video.write_videofile(output_path, codec='libx264', audio_codec='aac')
+            
+            # Закрываем файлы
+            video.close()
+            audio.close()
+            final_video.close()
+            
+        except Exception as e:
+            print(f"Ошибка при добавлении аудио к видео: {e}")
+            # Если не удалось добавить аудио, просто копируем видео
+            import shutil
+            shutil.copy2(video_path, output_path)
+    
     def create_gradient_background(self, frame_number, total_frames):
         """Создает анимированный градиентный фон"""
         # Создаем градиент от синего к фиолетовому
