@@ -14,7 +14,7 @@ from aiohttp import web
 from dotenv import load_dotenv
 from gtts import gTTS
 from moviepy.editor import ImageSequenceClip, AudioFileClip
-from video_gen import ImprovedVideoGenerator
+from video_gen import ImprovedVideoGenerator  # Импорт модуля
 
 # Подавление предупреждений о синтаксисе в moviepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -117,6 +117,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
         temp_video_path = temp_video.name
         generator.generate_video(text, audio_path, temp_video_path)
+        logging.info(f"Видео сгенерировано: {temp_video_path}")
     
     video_bytes = io.BytesIO()
     with open(temp_video_path, 'rb') as f:
