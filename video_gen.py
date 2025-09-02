@@ -86,23 +86,23 @@ class ImprovedVideoGenerator:
         return img
     
     def create_animated_text(self, text, frame_number, total_frames):
-        """Создает анимированный текст с эффектом появления с корректной обработкой альфа-канала"""
+        """Создает анимированный текст с корректной обработкой альфа-канала"""
         from PIL import Image
         font_size = self.get_optimal_font_size(text)
-        text_img = self.create_text_with_effects(text, font_size, self.width, self.height)
+        base_img = self.create_text_with_effects(text, font_size, self.width, self.height)
         fade_frames = int(self.fps * 0.5)  # 0.5 секунды на затухание
         
         if frame_number < fade_frames:
-            # Преобразуем изображение в массив numpy
-            data = np.array(text_img)
-            # Вычисляем альфа-канал с ограничением
-            progress = min(1.0, frame_number / fade_frames)  # Гарантируем, что не больше 1
-            alpha = int(255 * progress)  # Альфа от 0 до 255
-            # Применяем альфа к существующему альфа-каналу
-            logging.debug(f"Frame {frame_number}, progress={progress}, alpha={alpha}")
-            data[:, :, 3] = np.clip(data[:, :, 3] * alpha // 255, 0, 255).astype(np.uint8)
+            # Создаём новую маску альфа-канала
+            data = np.array(base_img)
+            progress = min(1.0, frame_number / fade_frames)  # Диапазон 0.0–1.0
+            alpha = np.uint8(255 * progress)  # Гарантированно в пределах 0–255
+            # Создаём маску и применяем её
+            alpha_mask = np.zeros((self.height, self.width), dtype=np.uint8)
+            alpha_mask.fill(alpha)
+            data[:, :, 3] = np.minimum(data[:, :, 3], alpha_mask)  # Устанавливаем минимальное значение
             return Image.fromarray(data)
-        return text_img
+        return base_img
     
     def create_gradient_background(self, frame_number, total_frames):
         """Создает анимированный градиентный фон"""
@@ -178,4 +178,3 @@ class ImprovedVideoGenerator:
         os.remove(audio_path)
         os.remove("subs.srt")
         return output_path
-
