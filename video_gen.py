@@ -99,6 +99,7 @@ class ImprovedVideoGenerator:
             progress = min(1.0, frame_number / fade_frames)  # Гарантируем, что не больше 1
             alpha = int(255 * progress)  # Альфа от 0 до 255
             # Применяем альфа к существующему альфа-каналу
+            logging.debug(f"Frame {frame_number}, progress={progress}, alpha={alpha}")
             data[:, :, 3] = np.clip(data[:, :, 3] * alpha // 255, 0, 255).astype(np.uint8)
             return Image.fromarray(data)
         return text_img
@@ -177,3 +178,4 @@ class ImprovedVideoGenerator:
         os.remove(audio_path)
         os.remove("subs.srt")
         return output_path
+
