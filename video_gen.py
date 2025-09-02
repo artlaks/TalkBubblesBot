@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 import os
 import math
+import subprocess
+import logging
 
 class ImprovedVideoGenerator:
     def __init__(self, width=480, height=480, fps=30):
@@ -45,6 +46,7 @@ class ImprovedVideoGenerator:
     
     def create_text_with_effects(self, text, font_size, frame_width, frame_height):
         """Создает текст с визуальными эффектами"""
+        from PIL import Image, ImageDraw, ImageFont
         lines = self.split_text_into_lines(text)
         img = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
@@ -89,8 +91,9 @@ class ImprovedVideoGenerator:
         text_img = self.create_text_with_effects(text, font_size, self.width, self.height)
         fade_frames = int(self.fps * 0.5)
         if frame_number < fade_frames:
-            alpha = int(255 * (frame_number / fade_frames))
+            from PIL import Image
             data = np.array(text_img)
+            alpha = int(255 * (frame_number / fade_frames))
             data[:, :, 3] = data[:, :, 3] * alpha // 255
             return Image.fromarray(data)
         return text_img
@@ -110,33 +113,62 @@ class ImprovedVideoGenerator:
     
     def composite_layers(self, background, text_overlay):
         """Накладывает текст на фон"""
+        from PIL import Image
         background_pil = Image.fromarray(cv2.cvtColor(background, cv2.COLOR_BGR2RGB))
         result = background_pil.copy()
         result.paste(text_overlay, (0, 0), text_overlay)
         return cv2.cvtColor(np.array(result), cv2.COLOR_RGB2BGR)
     
+    def generate_srt(self, text, audio_path):
+        """Генерирует .srt файл с синхронизацией текста и аудио"""
+        duration = self.get_audio_duration(audio_path)
+        words = text.split()
+        word_duration = duration / max(1, len(words))
+        with open("subs.srt", "w") as f:
+            for i, word in enumerate(words, 1):
+                start = (i - 1) * word_duration
+                end = i * word_duration
+                f.write(f"{i}\n{self.format_time(start)} --> {self.format_time(end)}\n{word}\n\n")
+    
+    def format_time(self, seconds):
+        """Форматирует время для .srt"""
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        millis = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+    
+    def get_audio_duration(self, audio_path):
+        """Получает длительность аудиофайла через ffprobe"""
+        result = subprocess.run([
+            "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+        ], capture_output=True, text=True)
+        return float(result.stdout.strip()) if result.stdout else 4.0
+    
     def generate_video(self, text, audio_path, output_path):
-        """Генерирует улучшенное видео с текстом и аудио"""
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        """Генерирует улучшенное видео с текстом, аудио и субтитрами"""
+        self.generate_srt(text, audio_path)
         duration = self.get_audio_duration(audio_path)
         total_frames = int(self.fps * duration)
-        out = cv2.VideoWriter(output_path, fourcc, self.fps, (self.width, self.height))
-        
+        video_frames = []
         for i in range(total_frames):
             frame = self.create_gradient_background(i, total_frames)
             text_overlay = self.create_animated_text(text, i, total_frames)
             frame = self.composite_layers(frame, text_overlay)
-            out.write(frame)
+            video_frames.append(frame)
         
+        temp_video = "temp_video.mp4"
+        out = cv2.VideoWriter(temp_video, cv2.VideoWriter_fourcc(*'mp4v'), self.fps, (self.width, self.height))
+        for frame in video_frames:
+            out.write(frame)
         out.release()
+        
+        # Слияние видео, аудио и субтитров через ffmpeg
+        subprocess.run([
+            "ffmpeg", "-i", temp_video, "-i", audio_path, "-vf", "subtitles=subs.srt", "-c:v", "libx264", "-c:a", "aac", "-shortest", output_path
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        # Удаление временных файлов
+        os.remove(temp_video)
+        os.remove(audio_path)
+        os.remove("subs.srt")
         return output_path
-    
-    def get_audio_duration(self, audio_path):
-        """Получает длительность аудиофайла"""
-        try:
-            from pydub import AudioSegment
-            audio = AudioSegment.from_file(audio_path)
-            return len(audio) / 1000.0
-        except Exception as e:
-            logging.error(f"Ошибка при получении длительности аудио: {e}")
-            return 4.0
