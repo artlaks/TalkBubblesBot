@@ -93,8 +93,8 @@ class ImprovedVideoGenerator:
         if frame_number < fade_frames:
             from PIL import Image
             data = np.array(text_img)
-            alpha = int(255 * (frame_number / fade_frames))
-            data[:, :, 3] = data[:, :, 3] * alpha // 255
+            alpha = min(255, int(255 * (frame_number / fade_frames)))  # Ограничение alpha до 255
+            data[:, :, 3] = np.clip(data[:, :, 3] * alpha // 255, 0, 255).astype(np.uint8)  # Корректная обработка
             return Image.fromarray(data)
         return text_img
     
