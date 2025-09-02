@@ -86,15 +86,20 @@ class ImprovedVideoGenerator:
         return img
     
     def create_animated_text(self, text, frame_number, total_frames):
-        """Создает анимированный текст с эффектом появления"""
+        """Создает анимированный текст с эффектом появления с корректной обработкой альфа-канала"""
+        from PIL import Image
         font_size = self.get_optimal_font_size(text)
         text_img = self.create_text_with_effects(text, font_size, self.width, self.height)
-        fade_frames = int(self.fps * 0.5)
+        fade_frames = int(self.fps * 0.5)  # 0.5 секунды на затухание
+        
         if frame_number < fade_frames:
-            from PIL import Image
+            # Преобразуем изображение в массив numpy
             data = np.array(text_img)
-            alpha = min(255, int(255 * (frame_number / fade_frames)))  # Ограничение alpha до 255
-            data[:, :, 3] = np.clip(data[:, :, 3] * alpha // 255, 0, 255).astype(np.uint8)  # Корректная обработка
+            # Вычисляем альфа-канал с ограничением
+            progress = min(1.0, frame_number / fade_frames)  # Гарантируем, что не больше 1
+            alpha = int(255 * progress)  # Альфа от 0 до 255
+            # Применяем альфа к существующему альфа-каналу
+            data[:, :, 3] = np.clip(data[:, :, 3] * alpha // 255, 0, 255).astype(np.uint8)
             return Image.fromarray(data)
         return text_img
     
