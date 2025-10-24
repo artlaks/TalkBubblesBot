@@ -33,8 +33,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_webhook(update: Update, context: ContextTypes.DEFAULT_TYPE):
     webhook_url = f"https://{WEBHOOK_HOST}/webhook"
-    await application.bot.set_webhook(url=webhook_url)
-    await update.message.reply_text(f"Webhook установлен: {webhook_url}")
+    try:
+        await application.bot.set_webhook(url=webhook_url)
+        await update.message.reply_text(f"Webhook установлен: {webhook_url}")
+        logging.info(f"Webhook set to {webhook_url}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка установки webhook: {str(e)}")
+        logging.error(f"Webhook set failed: {str(e)}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
