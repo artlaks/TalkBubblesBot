@@ -12,18 +12,19 @@ class ImprovedVideoGenerator:
 
     def generate_video(self, text, audio_path, output_path):
         try:
+            # Ограничение длины текста
+            text = text[:100] if len(text) > 100 else text
             # Создание видео
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, self.fps, (self.width, self.height))
 
-            # Генерация градиента (пример)
+            # Генерация градиента
             for frame_num in range(int(self.fps * 5)):  # 5 секунд
                 frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-                r = min(255, int(255 * frame_num / (self.fps * 5)))  # Ограничение до 255
-                frame[:, :] = (r, r, r)  # Серый градиент
-                # Добавление текста
+                r = min(255, int(255 * frame_num / (self.fps * 5)))
+                frame[:, :] = (r, r, r)
                 font = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(frame, text[:20], (50, self.height // 2), font, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, text, (50, self.height // 2), font, 1, (255, 255, 255), 2, cv2.LINE_AA)
                 out.write(frame)
 
             out.release()
