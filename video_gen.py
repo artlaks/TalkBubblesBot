@@ -1,14 +1,14 @@
 import cv2
-     import numpy as np
-     import logging
-     from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+import logging
+from PIL import Image, ImageDraw, ImageFont
 
-     class ImprovedVideoGenerator:
-         def __init__(self, width=480, height=480, fps=30):
-             self.width = width
-             self.height = height
-             self.fps = fps
-             logging.basicConfig(level=logging.INFO)
+class ImprovedVideoGenerator:
+    def __init__(self, width=480, height=480, fps=30):
+        self.width = width
+        self.height = height
+        self.fps = fps
+        logging.basicConfig(level=logging.INFO)
 
          def generate_video(self, text, audio_path, output_path):
              try:
@@ -37,3 +37,4 @@ import cv2
      if __name__ == "__main__":
          generator = ImprovedVideoGenerator()
          generator.generate_video("Test text", "audio.mp3", "output.mp4")
+
