@@ -48,16 +48,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ai_text = await get_openrouter_response(update.message.text)
         logging.info(f"Ответ от OpenRouter: {ai_text}")
 
-        clean_text = re.sub(r'[^\w\s]', '', ai_text)
+        clean_text = re.sub(r'[^\w\s!?]', '', ai_text)  # Сохраняем буквы, цифры, пробелы и ?
         logging.info(f"Текст для видео/аудио: {clean_text}")
 
         tts = gTTS(text=clean_text, lang='en')
         audio_bytes = io.BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
+        logging.debug(f"Audio generated, size: {audio_bytes.getbuffer().nbytes} bytes")
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
             temp_audio.write(audio_bytes.read())
             audio_path = temp_audio.name
+            logging.debug(f"Audio saved to {audio_path}")
 
         logging.debug("Starting video generation")
         generator = ImprovedVideoGenerator(width=480, height=480, fps=30)
@@ -96,9 +98,9 @@ async def get_openrouter_response(text):
                     if response.status == 200:
                         data = await response.json()
                         return data['choices'][0]['message']['content']
-                    elif response.status == 429:  # Too Many Requests
+                    elif response.status == 429:
                         if attempt < max_retries - 1:
-                            await asyncio.sleep(2 ** attempt)  # Экспоненциальная задержка
+                            await asyncio.sleep(2 ** attempt)
                             continue
                     raise Exception(f"Ошибка API: {response.status}")
         except Exception as e:
