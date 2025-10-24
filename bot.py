@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'localhost')
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', 'talkbubblesbot-production.up.railway.app')  # Домен Railway
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set")
@@ -32,7 +32,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь!")
 
 async def set_webhook(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+    webhook_url = f"https://{WEBHOOK_HOST}/webhook"
     await application.bot.set_webhook(url=webhook_url)
     await update.message.reply_text(f"Webhook установлен: {webhook_url}")
 
@@ -96,9 +96,9 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_m
 
 # Запуск (локальный polling или вебхук для Render)
 if __name__ == '__main__':
-    if RENDER_EXTERNAL_HOSTNAME == 'localhost':
+    if WEBHOOK_HOST == 'localhost':
         logging.info("Запуск бота в режиме polling...")
         application.run_polling()
     else:
-        logging.info(f"Запуск бота с вебхуком: https://{RENDER_EXTERNAL_HOSTNAME}/webhook")
-        application.run_webhook(listen="0.0.0.0", port=10000, url_path="/webhook", webhook_url=f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook")
+        logging.info(f"Запуск бота с вебхуком: https://{WEBHOOK_HOST}/webhook")
+        application.run_webhook(listen="0.0.0.0", port=10000, url_path="/webhook", webhook_url=f"https://{WEBHOOK_HOST}/webhook")
