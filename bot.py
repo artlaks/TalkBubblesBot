@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', 'talkbubblesbot-production.up.railway.app')  # Домен Railway
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', 'talkbubblesbot-production.up.railway.app')
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set")
@@ -94,11 +94,16 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("setwebhook", set_webhook))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Запуск (локальный polling или вебхук для Render)
+# Запуск (локальный polling или вебхук для Railway)
 if __name__ == '__main__':
     if WEBHOOK_HOST == 'localhost':
         logging.info("Запуск бота в режиме polling...")
         application.run_polling()
     else:
         logging.info(f"Запуск бота с вебхуком: https://{WEBHOOK_HOST}/webhook")
-        application.run_webhook(listen="0.0.0.0", port=10000, url_path="/webhook", webhook_url=f"https://{WEBHOOK_HOST}/webhook")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=10000,
+            url_path="/webhook",
+            webhook_url=f"https://{WEBHOOK_HOST}/webhook"
+        )
