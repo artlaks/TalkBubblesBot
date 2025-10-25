@@ -15,6 +15,11 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 from moviepy.editor import ImageSequenceClip, AudioFileClip
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+class Conversation(StatesGroup):
+    chatting = State()
 
 # Подавление предупреждений о синтаксисе в moviepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -75,10 +80,17 @@ def remove_emojis(text: str) -> str:
 # Команда /start
 # Обработка текстовых сообщений
 @dp.message()
-async def handle_message(message: Message):
+async def handle_message(message: Message, state: FSMContext):
     try:
         logging.info(f"Получено сообщение: {message.text}")
-        # Получение ответа от OpenRouter
+        # Получение контекста из FSM
+        data = await state.get_data()
+        conversation = data.get('conversation', [])
+
+        # Добавляем сообщение пользователя в контекст
+        conversation.append({"role": "user", "content": message.text})
+
+        # Получение ответа от OpenRouter с контекстом
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -89,9 +101,8 @@ async def handle_message(message: Message):
                 json={
                     "model": "google/gemma-2-9b-it:free",
                     "messages": [
-                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, отвечай на русском с юмором."},
-                        {"role": "user", "content": message.text}
-                    ],
+                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, ведешь беседу, помнишь контекст, даешь советы, отвечай на языке, на котором к тебе обращаются."}
+                    ] + conversation,  # Добавляем весь контекст
                     "max_tokens": 150
                 }
             ) as response:
@@ -100,13 +111,12 @@ async def handle_message(message: Message):
                     logging.error(f"Ошибка API: {response.status}, Ответ: {response_text}")
                     raise Exception(f"Ошибка API: {response.status}: {response_text}")
                 data = await response.json()
-                ai_text = data['choices'][0]['message']['content'].strip()
+                ai_text = data['choices'][0]['message']['content']
                 logging.info(f"Ответ от OpenRouter: {ai_text}")
 
-        # Проверка текста и установка запасного варианта
-        if not ai_text or ai_text == ".":
-            ai_text = "Простите, я не понял ваш запрос. Попробуйте ещё раз!"
-            logging.warning("Получен пустой или некорректный ответ от OpenRouter, используется запасной текст")
+        # Добавляем ответ бота в контекст
+        conversation.append({"role": "assistant", "content": ai_text})
+        await state.update_data(conversation=conversation)  # Сохраняем контекст
 
         # Удаляем смайлики для видео и аудио
         clean_text = remove_emojis(ai_text)
