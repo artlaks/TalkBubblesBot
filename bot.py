@@ -525,3 +525,18 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logging.info(f"Запуск сервера на порту {port}")
     web.run_app(app, host='0.0.0.0', port=port)
+
+# Добавьте в конец файла
+async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Укажите ваш пол: мужской или женский")
+    context.user_data['waiting_for_gender'] = True
+
+async def handle_gender(message: Message, state: FSMContext):
+    if state.user_data.get('waiting_for_gender'):
+        gender = message.text.lower()
+        if gender in ['мужской', 'женский']:
+            state.user_data['gender'] = gender
+            await message.reply("Пол сохранён!")
+            state.user_data['waiting_for_gender'] = False
+        else:
+            await message.reply("Неверный ввод. Попробуйте снова.")
