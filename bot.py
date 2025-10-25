@@ -97,9 +97,9 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
         audio_bytes = io.BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
-        # Оценка длительности: ~150 слов в минуту (0.5 сек/слово)
+        # Оценка длительности: ~150 слов в минуту (0.4 сек/слово)
         word_count = len(text.split())
-        duration = max(3.0, word_count * 0.5)  # Минимум 3 секунды
+        duration = max(3.0, word_count * 0.4)  # Минимум 3 секунды
         # Сохраняем аудио во временный файл
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
             temp_audio.write(audio_bytes.read())
@@ -130,7 +130,7 @@ def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont)
         lines.append(" ".join(current_line))
     return lines
 
-# Генерация анимации с синхронизированным текстом
+# Генерация анимации с статичным текстом
 def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
     width, height = 480, 480
@@ -154,8 +154,8 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     future_font = load_font(future_font_size)
     
     # Координаты для текста в границах кружка
-    text_y_current = 120  # Текущий текст сверху
-    text_y_future = 300  # Будущий текст снизу
+    text_y_current = height - 120  # Текущий текст
+    text_y_future = height - 60   # Будущий текст, ближе к текущему
 
     for i in range(num_frames):
         img = Image.new('RGB', (width, height), color='black')
