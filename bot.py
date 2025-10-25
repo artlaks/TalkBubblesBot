@@ -99,10 +99,10 @@ async def handle_message(message: Message, state: FSMContext):
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "google/gemma-2-9b-it:free",
+                    "model": "meta-llama/llama-3-70b-instruct",  # Новая модель
                     "messages": [
-                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, ведешь беседу, помнишь контекст, даешь советы, отвечай на языке, на котором к тебе обращаются."}
-                    ] + conversation,  # Добавляем весь контекст
+                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, помнишь контекст, даешь советы, отвечай на русском с юмором."}
+                    ] + conversation,
                     "max_tokens": 150
                 }
             ) as response:
@@ -116,7 +116,7 @@ async def handle_message(message: Message, state: FSMContext):
 
         # Добавляем ответ бота в контекст
         conversation.append({"role": "assistant", "content": ai_text})
-        await state.update_data(conversation=conversation)  # Сохраняем контекст
+        await state.update_data(conversation=conversation)
 
         # Удаляем смайлики для видео и аудио
         clean_text = remove_emojis(ai_text)
