@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', 'talkbubblesbot.onrender.com')
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', 'https://talkbubblesbot-production.up.railway.app')
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set")
