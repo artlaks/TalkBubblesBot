@@ -157,7 +157,7 @@ async def set_webhook_manual(message: Message):
         await message.reply(f"Не удалось установить webhook: {str(e)}")
 
 # Генерация аудио с gTTS с улучшенными настройками
-   def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
+def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
        try:
            text = text.strip().encode('utf-8').decode('utf-8', errors='ignore')  # Очистка кодировки
            tts = gTTS(text=text, lang=lang, slow=False, tld='co.uk')  # co.uk для более естественного голоса
