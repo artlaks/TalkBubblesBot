@@ -73,9 +73,65 @@ def remove_emojis(text: str) -> str:
     return emoji_pattern.sub(r'', text)
 
 # Команда /start
-@dp.message(Command(commands=['start']))
-async def send_welcome(message: Message):
-    await message.reply("Привет! Я TalkBubblesBot — твой виртуальный собеседник. Напиши что-нибудь, и я отвечу видеосообщением!")
+# Обработка текстовых сообщений
+@dp.message()
+async def handle_message(message: Message):
+    try:
+        logging.info(f"Получено сообщение: {message.text}")
+        # Получение ответа от OpenRouter
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "google/gemma-2-9b-it:free",
+                    "messages": [
+                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, отвечай на русском с юмором."},
+                        {"role": "user", "content": message.text}
+                    ],
+                    "max_tokens": 150
+                }
+            ) as response:
+                if response.status != 200:
+                    response_text = await response.text()
+                    logging.error(f"Ошибка API: {response.status}, Ответ: {response_text}")
+                    raise Exception(f"Ошибка API: {response.status}: {response_text}")
+                data = await response.json()
+                ai_text = data['choices'][0]['message']['content'].strip()
+                logging.info(f"Ответ от OpenRouter: {ai_text}")
+
+        # Проверка текста и установка запасного варианта
+        if not ai_text or ai_text == ".":
+            ai_text = "Простите, я не понял ваш запрос. Попробуйте ещё раз!"
+            logging.warning("Получен пустой или некорректный ответ от OpenRouter, используется запасной текст")
+
+        # Удаляем смайлики для видео и аудио
+        clean_text = remove_emojis(ai_text)
+        logging.info(f"Текст без смайликов для видео/аудио: {clean_text}")
+
+        # Генерация аудио и длительности
+        audio_data, duration, audio_path = text_to_speech(clean_text)
+        # Генерация видео
+        video_data = create_animation(clean_text, duration, audio_path)
+
+        # Отправка видеосообщения
+        logging.info("Отправка видеосообщения...")
+        await message.reply_video_note(
+            BufferedInputFile(video_data, filename="video_note.mp4"),
+            duration=int(duration),
+            length=480,
+            supports_streaming=True
+        )
+        logging.info("Видеосообщение отправлено")
+        # Отправка оригинального текста с смайликами
+        await message.reply(ai_text)
+        logging.info("Текстовый ответ отправлен")
+    except Exception as e:
+        logging.error(f"Ошибка в handle_message: {str(e)}")
+        await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
 # Команда /setwebhook (для ручной настройки)
 @dp.message(Command(commands=['setwebhook']))
