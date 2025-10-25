@@ -130,68 +130,72 @@ def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont)
         lines.append(" ".join(current_line))
     return lines
 
-# Генерация анимации с статичным текстом
-# Генерация анимации с статичным текстом
+# Генерация анимации с 8-битной девушкой
 def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
     width, height = 480, 480
     num_frames = int(duration * 30)  # 30 fps
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
-    frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Уменьшено для точности
-    max_text_width = 400  # Ограничение ширины для круга
-    
-    # Попробуем шрифт разного размера (оставлено для будущих изменений)
-    # font_size = 16
-    # font = load_font(font_size)
-    # lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
-    # while len(lines) > 2 and font_size > 10:  # Ограничим на 2 строки для текущего текста
-    #     font_size -= 2
-    #     font = load_font(font_size)
-    #     lines = split_text_for_display(" ".join(words[-4:]), max_text_width, font)
-    
-    # Шрифт для будущего текста
-    # future_font_size = int(font_size * 0.8)
-    # future_font = load_font(future_font_size)
-    
-    # Координаты для текста в границах кружка
-    # text_y_current = height - 120  # Текущий текст
-    # text_y_future = height - 60   # Будущий текст, ближе к текущему
+    frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Примерно 0.9 секунды на слово
 
+    # Пиксель-арт 8-битной девушки (статичная база)
     for i in range(num_frames):
-        img = Image.new('RGB', (width, height), color='black')
+        img = Image.new('RGB', (width, height), color=(0, 0, 0))  # Чёрный фон
         draw = ImageDraw.Draw(img)
-        # Пульсирующий круг
-        scale = 1.0 + 0.2 * np.sin(2 * np.pi * i / 30)
-        radius = int(100 * scale)
-        draw.ellipse(
-            (width//2 - radius, height//2 - radius, width//2 + radius, height//2 + radius),
-            fill='blue'
-        )
-        # Текущий текст: 3–4 последних слова, выравнивание по центру (отключено)
-        # current_word_idx = min(len(words) - 1, i // frames_per_word)
-        # start_idx = max(0, current_word_idx - 3)  # До 4 слов
-        # current_text = " ".join(words[start_idx:current_word_idx + 1])
-        # current_lines = split_text_for_display(current_text, max_text_width, font)
-        # y_offset = text_y_current
-        # for j, line in enumerate(current_lines[:2]):
-        #     text_width = font.getlength(line)
-        #     x_offset = (width - text_width) / 2
-        #     draw.text((x_offset, y_offset + j * (font_size + 5)), line, fill='white', font=font)
-        
-        # Будущий текст: следующие 3–4 слова, выравнивание по центру (отключено)
-        # future_start_idx = current_word_idx + 1
-        # future_end_idx = min(len(words), future_start_idx + 4)
-        # future_text = " ".join(words[future_start_idx:future_end_idx])
-        # if future_text:
-        #     future_lines = split_text_for_display(future_text, max_text_width, future_font)
-        #     y_offset = text_y_future
-        #     for j, line in enumerate(future_lines[:2]):
-        #         text_width = future_font.getlength(line)
-        #         x_offset = (width - text_width) / 2
-        #         draw.text((x_offset, y_offset + j * (future_font_size + 5)), line, fill='white', font=future_font)
-        
+
+        # Тело и волосы (яркие цвета)
+        draw.rectangle([(200, 200), (280, 400)], fill=(255, 128, 0))  # Оранжевое платье
+        draw.rectangle([(210, 180), (270, 220)], fill=(255, 215, 0))  # Жёлтые волосы
+        draw.rectangle([(220, 220), (260, 250)], fill=(0, 0, 255))  # Синяя повязка
+
+        # Лицо (статичная часть)
+        draw.rectangle([(230, 250), (250, 300)], fill=(255, 192, 203))  # Розовое лицо
+        # Глаза (статичные)
+        draw.rectangle([(235, 260), (240, 265)], fill=(0, 0, 0))  # Левый глаз
+        draw.rectangle([(245, 260), (250, 265)], fill=(0, 0, 0))  # Правый глаз
+
+        # Анимация губ (чередование состояний)
+        mouth_open = (i // 15) % 2 == 0  # Открытые губы каждые 0.5 секунды (15 кадров при 30 fps)
+        if mouth_open:
+            draw.rectangle([(238, 280), (242, 285)], fill=(255, 0, 0))  # Открытый рот (красный)
+        else:
+            draw.rectangle([(238, 282), (242, 283)], fill=(255, 0, 0))  # Закрытый рот (узкая линия)
+
         frames.append(np.array(img))
+
+    # Создание видео с moviepy
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+        temp_video_path = temp_video.name
+        clip = ImageSequenceClip(frames, fps=30)
+        try:
+            audio_clip = AudioFileClip(audio_path)
+            clip = clip.set_audio(audio_clip)
+            logging.info(f"Аудио прикреплено к видео: {audio_path}")
+        except Exception as e:
+            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
+            clip = clip  # Продолжаем без аудио, если ошибка
+        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
+        clip.close()
+        if clip.audio:
+            clip.audio.close()
+
+    # Чтение временного файла в BytesIO
+    video_bytes = io.BytesIO()
+    with open(temp_video_path, 'rb') as f:
+        video_bytes.write(f.read())
+    video_bytes.seek(0)
+
+    # Проверка размера файла
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
+    logging.info(f"Размер видео: {video_size:.2f} МБ")
+
+    # Удаление временных файлов
+    os.remove(temp_video_path)
+    os.remove(audio_path)
+    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
+
+    return video_bytes.read()
     
     # Создание видео с moviepy
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
