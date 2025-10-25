@@ -5,3 +5,5 @@ aiogram==3.13.1
 gTTS==2.5.4
 moviepy==1.0.3
 numpy==2.1.2
+opencv-python==4.10.0.84
+ffmpeg-python==0.2.0
