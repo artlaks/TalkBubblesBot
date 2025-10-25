@@ -130,39 +130,83 @@ def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont)
         lines.append(" ".join(current_line))
     return lines
 
-# Генерация анимации с 8-битной девушкой в стиле примера
+# Генерация анимации с пользовательским изображением девушки
 def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
-    width, height = 480, 480
+    width, height = 480, 480  # Убедитесь, что размер соответствует вашей картинке
     num_frames = int(duration * 30)  # 30 fps
     words = text.split()
     word_duration = duration / max(1, len(words))  # Длительность одного слова
     frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Примерно 0.9 секунды на слово
 
-    # Пиксель-арт 8-битной девушки
+    # Загрузка базового изображения
+    try:
+        base_image = Image.open("assets/girl.png").convert("RGB")
+        # Если размер не 480x480, изменяем пропорционально
+        if base_image.size != (width, height):
+            base_image = base_image.resize((width, height), Image.Resampling.LANCZOS)
+    except FileNotFoundError:
+        logging.error("Файл assets/girl.png не найден. Использую чёрный фон.")
+        base_image = Image.new("RGB", (width, height), color=(0, 0, 0))
+    except Exception as e:
+        logging.error(f"Ошибка загрузки изображения: {str(e)}")
+        base_image = Image.new("RGB", (width, height), color=(0, 0, 0))
+
+    # Определяем область рта (примерные координаты, настройте под вашу картинку)
+    mouth_x, mouth_y = 230, 300  # Центр рта, настройте вручную
+    mouth_width, mouth_height = 20, 20  # Размер области рта
+
     for i in range(num_frames):
-        img = Image.new('RGB', (width, height), color=(0, 0, 0))  # Чёрный фон
-        draw = ImageDraw.Draw(img)
-
-        # Тело и одежда
-        draw.rectangle([(210, 250), (270, 400)], fill=(255, 69, 0))  # Красное платье
-        draw.rectangle([(200, 180), (280, 250)], fill=(255, 165, 0))  # Оранжевые волосы
-        draw.rectangle([(220, 250), (260, 300)], fill=(255, 255, 255))  # Белое лицо
-
-        # Глаза
-        draw.rectangle([(230, 260), (235, 265)], fill=(0, 0, 0))  # Левый глаз
-        draw.rectangle([(245, 260), (250, 265)], fill=(0, 0, 0))  # Правый глаз
+        # Копируем базовое изображение для каждого кадра
+        frame = base_image.copy()
+        draw = ImageDraw.Draw(frame)
 
         # Анимация губ (3 состояния)
         mouth_frame = (i // 10) % 3  # Переключение каждые 0.33 секунды (10 кадров)
+        mouth_region = [mouth_x - mouth_width//2, mouth_y - mouth_height//2,
+                       mouth_x + mouth_width//2, mouth_y + mouth_height//2]
+        draw.rectangle(mouth_region, fill=(0, 0, 0))  # Стираем предыдущий рот
         if mouth_frame == 0:  # Закрыто
-            draw.rectangle([(237, 280), (243, 281)], fill=(0, 0, 0))  # Узкая линия
+            draw.rectangle([mouth_x - 4, mouth_y, mouth_x + 4, mouth_y + 1], fill=(0, 0, 0))  # Узкая линия
         elif mouth_frame == 1:  # Слегка открыто
-            draw.rectangle([(237, 280), (243, 283)], fill=(0, 0, 0))  # Маленький рот
+            draw.rectangle([mouth_x - 4, mouth_y, mouth_x + 4, mouth_y + 3], fill=(0, 0, 0))  # Маленький рот
         else:  # Широко открыто
-            draw.rectangle([(237, 277), (243, 285)], fill=(0, 0, 0))  # Широкий рот
+            draw.rectangle([mouth_x - 4, mouth_y - 3, mouth_x + 4, mouth_y + 6], fill=(0, 0, 0))  # Широкий рот
 
-        frames.append(np.array(img))
+        frames.append(np.array(frame))
+
+    # Создание видео с moviepy
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+        temp_video_path = temp_video.name
+        clip = ImageSequenceClip(frames, fps=30)
+        try:
+            audio_clip = AudioFileClip(audio_path)
+            clip = clip.set_audio(audio_clip)
+            logging.info(f"Аудио прикреплено к видео: {audio_path}")
+        except Exception as e:
+            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
+            clip = clip  # Продолжаем без аудио, если ошибка
+        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
+        clip.close()
+        if clip.audio:
+            clip.audio.close()
+
+    # Чтение временного файла в BytesIO
+    video_bytes = io.BytesIO()
+    with open(temp_video_path, 'rb') as f:
+        video_bytes.write(f.read())
+    video_bytes.seek(0)
+
+    # Проверка размера файла
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
+    logging.info(f"Размер видео: {video_size:.2f} МБ")
+
+    # Удаление временных файлов
+    os.remove(temp_video_path)
+    os.remove(audio_path)
+    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
+
+    return video_bytes.read()
 
     # Создание видео с moviepy
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
