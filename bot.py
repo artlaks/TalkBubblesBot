@@ -97,9 +97,9 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
         audio_bytes = io.BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
-        # Оценка длительности: ~150 слов в минуту (0.4 сек/слово)
+        # Оценка длительности: ~150 слов в минуту (0.5 сек/слово)
         word_count = len(text.split())
-        duration = max(3.0, word_count * 0.4)  # Минимум 3 секунды
+        duration = max(3.0, word_count * 0.5)  # Минимум 3 секунды
         # Сохраняем аудио во временный файл
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
             temp_audio.write(audio_bytes.read())
