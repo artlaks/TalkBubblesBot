@@ -130,50 +130,82 @@ def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont)
         lines.append(" ".join(current_line))
     return lines
 
-# Генерация анимации с пользовательским изображением девушки
+# Генерация анимации с пользовательской GIF
 def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
-    width, height = 480, 480  # Убедитесь, что размер соответствует вашей картинке
+    width, height = 480, 480  # Убедитесь, что размер соответствует вашей GIF
     num_frames = int(duration * 30)  # 30 fps
-    words = text.split()
-    word_duration = duration / max(1, len(words))  # Длительность одного слова
-    frames_per_word = max(1, int(word_duration * 30 * 0.9))  # Примерно 0.9 секунды на слово
 
-    # Загрузка базового изображения
+    # Загрузка GIF
     try:
-        base_image = Image.open("assets/girl.png").convert("RGB")
-        # Если размер не 480x480, изменяем пропорционально
-        if base_image.size != (width, height):
-            base_image = base_image.resize((width, height), Image.Resampling.LANCZOS)
+        gif = Image.open("assets/girl_gif.gif")
+        gif_frames = []
+        try:
+            while True:
+                gif_frame = gif.copy()
+                gif_frame = gif_frame.convert("RGB")
+                if gif_frame.size != (width, height):
+                    gif_frame = gif_frame.resize((width, height), Image.Resampling.LANCZOS)
+                gif_frames.append(np.array(gif_frame))
+                gif.seek(gif.tell() + 1)
+        except EOFError:
+            pass
+        gif.close()
     except FileNotFoundError:
-        logging.error("Файл assets/girl.png не найден. Использую чёрный фон.")
-        base_image = Image.new("RGB", (width, height), color=(0, 0, 0))
+        logging.error("Файл assets/girl_gif.gif не найден. Использую чёрный фон.")
+        gif_frames = [np.array(Image.new("RGB", (width, height), color=(0, 0, 0))) for _ in range(30)]
     except Exception as e:
-        logging.error(f"Ошибка загрузки изображения: {str(e)}")
-        base_image = Image.new("RGB", (width, height), color=(0, 0, 0))
+        logging.error(f"Ошибка загрузки GIF: {str(e)}")
+        gif_frames = [np.array(Image.new("RGB", (width, height), color=(0, 0, 0))) for _ in range(30)]
 
-    # Определяем область рта (примерные координаты, настройте под вашу картинку)
-    mouth_x, mouth_y = 230, 300  # Центр рта, настройте вручную
-    mouth_width, mouth_height = 20, 20  # Размер области рта
+    # Повторяем GIF для соответствия длительности
+    gif_duration = len(gif_frames) / 30  # Длительность GIF в секундах (при 30 fps)
+    if gif_duration > 0:
+        repeat_count = max(1, int(duration / gif_duration))
+        full_frames = gif_frames * repeat_count
+        # Обрезаем или дополняем до нужной длительности
+        if len(full_frames) < num_frames:
+            full_frames.extend(gif_frames[:num_frames - len(full_frames)])
+        elif len(full_frames) > num_frames:
+            full_frames = full_frames[:num_frames]
+        frames = full_frames
+    else:
+        frames = [np.array(Image.new("RGB", (width, height), color=(0, 0, 0))) for _ in range(num_frames)]
 
-    for i in range(num_frames):
-        # Копируем базовое изображение для каждого кадра
-        frame = base_image.copy()
-        draw = ImageDraw.Draw(frame)
+    # Создание видео с moviepy
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+        temp_video_path = temp_video.name
+        clip = ImageSequenceClip(frames, fps=30)
+        try:
+            audio_clip = AudioFileClip(audio_path)
+            clip = clip.set_audio(audio_clip)
+            if clip.duration < duration:
+                clip = clip.set_duration(duration)  # Убедимся, что видео не короче аудио
+            logging.info(f"Аудио прикреплено к видео: {audio_path}")
+        except Exception as e:
+            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
+            clip = clip.set_duration(duration)  # Используем длительность текста
+        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
+        clip.close()
+        if clip.audio:
+            clip.audio.close()
 
-        # Анимация губ (3 состояния)
-        mouth_frame = (i // 10) % 3  # Переключение каждые 0.33 секунды (10 кадров)
-        mouth_region = [mouth_x - mouth_width//2, mouth_y - mouth_height//2,
-                       mouth_x + mouth_width//2, mouth_y + mouth_height//2]
-        draw.rectangle(mouth_region, fill=(0, 0, 0))  # Стираем предыдущий рот
-        if mouth_frame == 0:  # Закрыто
-            draw.rectangle([mouth_x - 4, mouth_y, mouth_x + 4, mouth_y + 1], fill=(0, 0, 0))  # Узкая линия
-        elif mouth_frame == 1:  # Слегка открыто
-            draw.rectangle([mouth_x - 4, mouth_y, mouth_x + 4, mouth_y + 3], fill=(0, 0, 0))  # Маленький рот
-        else:  # Широко открыто
-            draw.rectangle([mouth_x - 4, mouth_y - 3, mouth_x + 4, mouth_y + 6], fill=(0, 0, 0))  # Широкий рот
+    # Чтение временного файла в BytesIO
+    video_bytes = io.BytesIO()
+    with open(temp_video_path, 'rb') as f:
+        video_bytes.write(f.read())
+    video_bytes.seek(0)
 
-        frames.append(np.array(frame))
+    # Проверка размера файла
+    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
+    logging.info(f"Размер видео: {video_size:.2f} МБ")
+
+    # Удаление временных файлов
+    os.remove(temp_video_path)
+    os.remove(audio_path)
+    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
+
+    return video_bytes.read()
 
     # Создание видео с moviepy
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
