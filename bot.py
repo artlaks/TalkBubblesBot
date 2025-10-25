@@ -156,26 +156,25 @@ async def set_webhook_manual(message: Message):
         logging.error(f"Ошибка установки webhook вручную: {str(e)}")
         await message.reply(f"Не удалось установить webhook: {str(e)}")
 
-# Генерация аудио и оценка длительности
-def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
-    try:
-        tts = gTTS(text=text, lang=lang)
-        audio_bytes = io.BytesIO()
-        tts.write_to_fp(audio_bytes)
-        audio_bytes.seek(0)
-        # Оценка длительности: ~150 слов в минуту (0.5 сек/слово)
-        word_count = len(text.split())
-        duration = max(3.0, word_count * 0.5)  # Минимум 3 секунды
-        # Сохраняем аудио во временный файл
-        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
-            temp_audio.write(audio_bytes.read())
-            temp_audio_path = temp_audio.name
-        audio_bytes.seek(0)
-        logging.info(f"Аудио создано, длительность: {duration} сек, путь: {temp_audio_path}")
-        return audio_bytes.read(), duration, temp_audio_path
-    except Exception as e:
-        logging.error(f"Ошибка генерации аудио: {str(e)}")
-        raise
+# Генерация аудио с gTTS с улучшенными настройками
+   def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
+       try:
+           text = text.strip().encode('utf-8').decode('utf-8', errors='ignore')  # Очистка кодировки
+           tts = gTTS(text=text, lang=lang, slow=False, tld='co.uk')  # co.uk для более естественного голоса
+           audio_bytes = io.BytesIO()
+           tts.write_to_fp(audio_bytes)
+           audio_bytes.seek(0)
+           word_count = len(text.split())
+           duration = max(3.0, word_count * 0.5)  # Минимум 3 секунды
+           with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False, encoding='utf-8') as temp_audio:
+               temp_audio.write(audio_bytes.read())
+               temp_audio_path = temp_audio.name
+           audio_bytes.seek(0)
+           logging.info(f"Аудио создано, длительность: {duration} сек, путь: {temp_audio_path}")
+           return audio_bytes.read(), duration, temp_audio_path
+       except Exception as e:
+           logging.error(f"Ошибка генерации аудио: {str(e)}")
+           raise
 
 # Разбиение текста на части для отображения
 def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont) -> list:
