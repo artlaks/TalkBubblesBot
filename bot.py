@@ -101,7 +101,7 @@ async def handle_message(message: Message, state: FSMContext):
                 json={
                     "model": "meta-llama/llama-3-70b-instruct",  # Новая модель
                     "messages": [
-                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, помнишь контекст, даешь советы, отвечай на русском с юмором."}
+                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, молодая девушка, помнишь контекст, даешь советы, отвечай на русском с юмором."}
                     ] + conversation,
                     "max_tokens": 150
                 }
@@ -164,13 +164,15 @@ def text_to_speech(text: str, lang: str = 'ru') -> tuple[bytes, float, str]:
         audio_bytes = io.BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
-        word_count = len(text.split())
-        duration = max(3.0, word_count * 0.5)  # Минимум 3 секунды
-        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:  # Убрано encoding
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
             temp_audio.write(audio_bytes.read())
             temp_audio_path = temp_audio.name
         audio_bytes.seek(0)
-        logging.info(f"Аудио создано, длительность: {duration} сек, путь: {temp_audio_path}")
+        # Точное измерение длительности с moviepy
+        audio_clip = AudioFileClip(temp_audio_path)
+        duration = audio_clip.duration
+        audio_clip.close()
+        logging.info(f"Аудио создано, реальная длительность: {duration} сек, путь: {temp_audio_path}")
         return audio_bytes.read(), duration, temp_audio_path
     except Exception as e:
         logging.error(f"Ошибка генерации аудио: {str(e)}")
@@ -195,13 +197,11 @@ def split_text_for_display(text: str, max_width: int, font: ImageFont.ImageFont)
         lines.append(" ".join(current_line))
     return lines
 
-# Генерация анимации с пользовательской GIF (замедленная)
+# Генерация анимации с пользовательской GIF (замедленная с ускоренным аудио)
 def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     frames = []
     width, height = 480, 480  # Убедитесь, что размер соответствует вашей GIF
-    num_frames = int(duration * 15)  # Уменьшаем FPS до 15 для замедления
-    words = text.split()
-    word_duration = duration / max(1, len(words))  # Длительность одного слова
+    num_frames = int(duration * 15)  # 15 FPS для замедления
 
     # Загрузка GIF
     try:
@@ -245,23 +245,28 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     else:
         frames = [np.array(Image.new("RGB", (width, height), color=(0, 0, 0))) for _ in range(num_frames)]
 
-    # Создание видео с moviepy
+    # Создание видео с moviepy и ускорение аудио
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
         temp_video_path = temp_video.name
-        clip = ImageSequenceClip(frames, fps=15)  # Уменьшаем FPS до 15
+        clip = ImageSequenceClip(frames, fps=15)
         try:
             audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip)
-            if clip.duration < duration:
-                clip = clip.set_duration(duration)  # Убедимся, что видео не короче аудио
-            logging.info(f"Аудио прикреплено к видео: {audio_path}")
+            # Ускоряем аудио на 20% (коэффициент 0.8, где 1.0 — оригинальная скорость)
+            accelerated_audio = audio_clip.fx(audio_time_stretch, factor=0.8)
+            clip = clip.set_audio(accelerated_audio)
+            adjusted_duration = audio_clip.duration * 0.8  # Новая длительность после ускорения
+            if clip.duration < adjusted_duration:
+                clip = clip.set_duration(adjusted_duration)
+            logging.info(f"Аудио ускорено, новая длительность: {adjusted_duration} сек")
         except Exception as e:
             logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip.set_duration(duration)  # Используем длительность текста
+            clip = clip.set_duration(duration)
         clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=15)
         clip.close()
-        if clip.audio:
-            clip.audio.close()
+        if 'accelerated_audio' in locals():
+            accelerated_audio.close()
+        if 'audio_clip' in locals():
+            audio_clip.close()
 
     # Чтение временного файла в BytesIO
     video_bytes = io.BytesIO()
@@ -278,173 +283,6 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
     os.remove(audio_path)
     logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
 
-    return video_bytes.read()
-
-    # Создание видео с moviepy
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
-        temp_video_path = temp_video.name
-        clip = ImageSequenceClip(frames, fps=30)
-        try:
-            audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip)
-            if clip.duration < duration:
-                clip = clip.set_duration(duration)  # Убедимся, что видео не короче аудио
-            logging.info(f"Аудио прикреплено к видео: {audio_path}")
-        except Exception as e:
-            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip.set_duration(duration)  # Используем длительность текста
-        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
-        clip.close()
-        if clip.audio:
-            clip.audio.close()
-
-    # Чтение временного файла в BytesIO
-    video_bytes = io.BytesIO()
-    with open(temp_video_path, 'rb') as f:
-        video_bytes.write(f.read())
-    video_bytes.seek(0)
-
-    # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
-    logging.info(f"Размер видео: {video_size:.2f} МБ")
-
-    # Удаление временных файлов
-    os.remove(temp_video_path)
-    os.remove(audio_path)
-    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
-
-    return video_bytes.read()
-
-    # Создание видео с moviepy
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
-        temp_video_path = temp_video.name
-        clip = ImageSequenceClip(frames, fps=30)
-        try:
-            audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip)
-            logging.info(f"Аудио прикреплено к видео: {audio_path}")
-        except Exception as e:
-            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip  # Продолжаем без аудио, если ошибка
-        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
-        clip.close()
-        if clip.audio:
-            clip.audio.close()
-
-    # Чтение временного файла в BytesIO
-    video_bytes = io.BytesIO()
-    with open(temp_video_path, 'rb') as f:
-        video_bytes.write(f.read())
-    video_bytes.seek(0)
-
-    # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
-    logging.info(f"Размер видео: {video_size:.2f} МБ")
-
-    # Удаление временных файлов
-    os.remove(temp_video_path)
-    os.remove(audio_path)
-    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
-
-    return video_bytes.read()
-
-    # Создание видео с moviepy
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
-        temp_video_path = temp_video.name
-        clip = ImageSequenceClip(frames, fps=30)
-        try:
-            audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip)
-            logging.info(f"Аудио прикреплено к видео: {audio_path}")
-        except Exception as e:
-            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip  # Продолжаем без аудио, если ошибка
-        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
-        clip.close()
-        if clip.audio:
-            clip.audio.close()
-
-    # Чтение временного файла в BytesIO
-    video_bytes = io.BytesIO()
-    with open(temp_video_path, 'rb') as f:
-        video_bytes.write(f.read())
-    video_bytes.seek(0)
-
-    # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
-    logging.info(f"Размер видео: {video_size:.2f} МБ")
-
-    # Удаление временных файлов
-    os.remove(temp_video_path)
-    os.remove(audio_path)
-    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
-
-    return video_bytes.read()
-
-    # Создание видео с moviepy
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
-        temp_video_path = temp_video.name
-        clip = ImageSequenceClip(frames, fps=30)
-        try:
-            audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip)
-            logging.info(f"Аудио прикреплено к видео: {audio_path}")
-        except Exception as e:
-            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip  # Продолжаем без аудио, если ошибка
-        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
-        clip.close()
-        if clip.audio:
-            clip.audio.close()
-
-    # Чтение временного файла в BytesIO
-    video_bytes = io.BytesIO()
-    with open(temp_video_path, 'rb') as f:
-        video_bytes.write(f.read())
-    video_bytes.seek(0)
-
-    # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
-    logging.info(f"Размер видео: {video_size:.2f} МБ")
-
-    # Удаление временных файлов
-    os.remove(temp_video_path)
-    os.remove(audio_path)
-    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
-
-    return video_bytes.read()
-    
-    # Создание видео с moviepy
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
-        temp_video_path = temp_video.name
-        clip = ImageSequenceClip(frames, fps=30)
-        try:
-            audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip)
-            logging.info(f"Аудио прикреплено к видео: {audio_path}")
-        except Exception as e:
-            logging.error(f"Ошибка прикрепления аудио: {str(e)}")
-            clip = clip  # Продолжаем без аудио, если ошибка
-        clip.write_videofile(temp_video_path, codec='libx264', audio_codec='aac', fps=30)
-        clip.close()
-        if clip.audio:
-            clip.audio.close()
-    
-    # Чтение временного файла в BytesIO
-    video_bytes = io.BytesIO()
-    with open(temp_video_path, 'rb') as f:
-        video_bytes.write(f.read())
-    video_bytes.seek(0)
-    
-    # Проверка размера файла
-    video_size = len(video_bytes.getvalue()) / (1024 * 1024)  # Размер в МБ
-    logging.info(f"Размер видео: {video_size:.2f} МБ")
-    
-    # Удаление временных файлов
-    os.remove(temp_video_path)
-    os.remove(audio_path)
-    logging.info(f"Видео создано: {temp_video_path}, аудио удалено: {audio_path}")
-    
     return video_bytes.read()
 
 # Обработка текстовых сообщений
