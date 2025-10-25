@@ -248,29 +248,9 @@ async def handle_message(message: Message):
             supports_streaming=True
         )
         logging.info("Видеосообщение отправлено")
-
-        # Цитирование с отображением начала сообщения
-        preview_length = 100  # Примерно 2-3 строки
-        if len(ai_text) > preview_length:
-            preview_text = ai_text[:preview_length] + "..."
-            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Показать ещё", callback_data="show_more")]
-            ])
-            await message.reply(ai_text, reply_markup=keyboard)  # Полное сообщение отправляется
-            logging.info("Отправлено полное сообщение с предпросмотром и кнопкой")
-        else:
-            await message.reply(ai_text)
-            logging.info("Отправлено полное сообщение (короче 100 символов)")
-
-        # Обработчик callback для раскрытия текста
-        @dp.callback_query(lambda c: c.data == "show_more")
-        async def process_show_more(callback_query: types.CallbackQuery):
-            await callback_query.message.delete()  # Удаляем сообщение с предпросмотром
-            await callback_query.message.answer(ai_text)  # Отправляем полное сообщение заново
-            await callback_query.answer()
-            logging.info("Полное сообщение показано по запросу")
-
+        # Отправка оригинального текста с смайликами
+        await message.reply(ai_text)
+        logging.info("Текстовый ответ отправлен")
     except Exception as e:
         logging.error(f"Ошибка в handle_message: {str(e)}")
         await message.reply(f"Ой, что-то пошло не так: {str(e)}")
