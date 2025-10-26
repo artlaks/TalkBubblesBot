@@ -205,7 +205,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
 
     # Загрузка GIF
     try:
-        gif = Image.open("assets/girl_gif2.gif")
+        gif = Image.open("assets/girl_mp4.mp4")
         gif_frames = []
         try:
             while True:
@@ -219,7 +219,7 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
             pass
         gif.close()
     except FileNotFoundError:
-        logging.error("Файл assets/girl_gif.gif2 не найден. Использую чёрный фон.")
+        logging.error("Файл assets/girl_mp4.mp4 не найден. Использую чёрный фон.")
         gif_frames = [np.array(Image.new("RGB", (width, height), color=(0, 0, 0))) for _ in range(15)]
     except Exception as e:
         logging.error(f"Ошибка загрузки GIF: {str(e)}")
