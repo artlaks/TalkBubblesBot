@@ -16,7 +16,26 @@
 - ⚡ **Быстрый и бесплатный старт**: 5 видео/день free, unlimited в Premium.
 
 ## Установка и запуск
-(твои шаги без изменений)
+1. Клонируйте репозиторий:
+```bash
+git clone https://github.com/artlaks/TalkBubblesBot.git
+cd TalkBubblesBot
+```
+
+2. Установите зависимости:
+```bash
+pip install -r requirements.txt
+```
+
+3. Создайте файл конфигурации `config.py`:
+```python
+BOT_TOKEN = "ваш_токен_бота"
+```
+
+4. Запустите бота:
+```bash
+python bot.py
+```
 
 ## Пример использования
 - Пользователь: "Расскажи анекдот!"
