@@ -355,13 +355,13 @@ webhook_requests_handler.register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.startup.register(on_startup)
 
-# --- СЛОВАРЬ С БАЛАНСАМИ (в памяти, пока без базы) ---
-user_balances = {}  # user_id → количество кредитов
+# --- БАЛАНС ПОЛЬЗОВАТЕЛЕЙ (в памяти) ---
+user_balances = {}  # user_id → кол-во кредитов
 DEFAULT_START_CREDITS = 30
 
 # --- ОБРАБОТЧИК /start ---
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     if user_id not in user_balances:
         user_balances[user_id] = DEFAULT_START_CREDITS
@@ -369,19 +369,18 @@ async def cmd_start(message: Message):
     balance = user_balances[user_id]
 
     text = (
-        "Привет! 👋\n"
-        "Я — твой личный языковой собеседник!\n\n"
+        "Привет! Я — твой личный языковой собеседник!\n\n"
         "Что я умею:\n"
         "• Отвечать видеосообщениями с живой анимацией\n"
         "• Синхронизировать губы с речью\n"
-        "• Помнить наш диалог и давать советы\n"
+        "• Помнить диалог и давать советы\n"
         "• Работать на русском и английском\n\n"
         "Расценки:\n"
         "• 1 видеосообщение = 1 кредит\n"
         "• 30 кредитов — бесплатно при старте\n"
         "• 100 кредитов — 299 ₽\n"
         "• 300 кредитов — 799 ₽\n\n"
-        "Пополни баланс и начни общаться без ограничений!"
+        "Пополни баланс и общайся без ограничений!"
     )
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -395,19 +394,19 @@ async def cmd_start(message: Message):
 
 # --- ОБРАБОТЧИК КНОПКИ "Пополнить" ---
 @dp.callback_query(lambda c: c.data == "topup")
-async def callback_topup(callback_query: types.CallbackQuery):
-    await callback_query.answer()  # убираем "часики"
+async def callback_topup(callback_query: CallbackQuery):
+    await callback_query.answer()  # убираем часики
     await callback_query.message.answer(
         "Выберите пакет:\n\n"
         "100 кредитов — 299 ₽\n"
         "300 кредитов — 799 ₽\n\n"
-        "После оплаты баланс обновится автоматически.\n"
-        "Оплата через ЮKassa — безопасно и мгновенно!"
+        "Оплата через ЮKassa — безопасно и мгновенно!\n"
+        "После оплаты баланс обновится автоматически."
     )
 
-# --- ОБРАБОТЧИК КОМАНДЫ /balance (по желанию) ---
+# --- КОМАНДА /balance (по желанию) ---
 @dp.message(Command("balance"))
-async def cmd_balance(message: Message):
+async def cmd_balance(message: types.Message):
     user_id = message.from_user.id
     balance = user_balances.get(user_id, 0)
     await message.answer(f"Ваш баланс: {balance} кредитов")
