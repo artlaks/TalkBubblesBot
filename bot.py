@@ -17,8 +17,9 @@ from gtts import gTTS
 from moviepy.editor import ImageSequenceClip, AudioFileClip
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
+from aiogram import F
 
 class Conversation(StatesGroup):
     chatting = State()
@@ -355,60 +356,59 @@ webhook_requests_handler.register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.startup.register(on_startup)
 
-# --- БАЛАНС ПОЛЬЗОВАТЕЛЕЙ (в памяти) ---
-user_balances = {}  # user_id → кол-во кредитов
-DEFAULT_START_CREDITS = 30
+# Баланс в памяти (потом перенесём в БД)
+user_balances = {}
+START_CREDITS = 30
 
-# --- ОБРАБОТЧИК /start ---
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message):
+async def cmd_start(message: Message):  # используем уже импортированный Message
     user_id = message.from_user.id
     if user_id not in user_balances:
-        user_balances[user_id] = DEFAULT_START_CREDITS
+        user_balances[user_id] = START_CREDITS
 
     balance = user_balances[user_id]
 
-    text = (
-        "Привет! Я — твой личный языковой собеседник!\n\n"
-        "Что я умею:\n"
-        "• Отвечать видеосообщениями с живой анимацией\n"
-        "• Синхронизировать губы с речью\n"
-        "• Помнить диалог и давать советы\n"
-        "• Работать на русском и английском\n\n"
-        "Расценки:\n"
-        "• 1 видеосообщение = 1 кредит\n"
-        "• 30 кредитов — бесплатно при старте\n"
+    welcome_text = (
+        "Привет! Я твой личный видеособеседник!\n\n"
+        "Что умею:\n"
+        "• Отвечать живыми видеокружочками\n"
+        "• Синхронизация губ + мимика\n"
+        "• Помню весь диалог\n"
+        "• Русский и английский языки\n\n"
+        "Тарифы:\n"
+        "• 1 видеоответ = 1 кредит\n"
+        "• При старте — 30 кредитов бесплатно\n"
         "• 100 кредитов — 299 ₽\n"
         "• 300 кредитов — 799 ₽\n\n"
-        "Пополни баланс и общайся без ограничений!"
+        "Пополни баланс и общайся без лимита!"
     )
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пополнить", callback_data="topup")]
+        [InlineKeyboardButton(text="Пополнить баланс", callback_data="topup")]
     ])
 
     await message.answer(
-        text=f"{text}\n\nБаланс: {balance} кредитов",
+        text=f"{welcome_text}\n\nБаланс: {balance} кредитов",
         reply_markup=keyboard
     )
 
-# --- ОБРАБОТЧИК КНОПКИ "Пополнить" ---
-@dp.callback_query(lambda c: c.data == "topup")
-async def callback_topup(callback_query: CallbackQuery):
-    await callback_query.answer()  # убираем часики
-    await callback_query.message.answer(
-        "Выберите пакет:\n\n"
+
+@dp.callback_query(F.data == "topup")
+async def callback_topup(callback: CallbackQuery):
+    await callback.answer()  # убираем "часики"
+
+    await callback.message.answer(
+        "Выберите пакет кредитов:\n\n"
         "100 кредитов — 299 ₽\n"
         "300 кредитов — 799 ₽\n\n"
-        "Оплата через ЮKassa — безопасно и мгновенно!\n"
-        "После оплаты баланс обновится автоматически."
+        "Оплата через ЮKassa — мгновенно и безопасно.\n"
+        "После оплаты кредиты придут автоматически!"
     )
 
-# --- КОМАНДА /balance (по желанию) ---
+
 @dp.message(Command("balance"))
-async def cmd_balance(message: types.Message):
-    user_id = message.from_user.id
-    balance = user_balances.get(user_id, 0)
+async def cmd_balance(message: Message):
+    balance = user_balances.get(message.from_user.id, 0)
     await message.answer(f"Ваш баланс: {balance} кредитов")
 
 
