@@ -81,6 +81,60 @@ def remove_emojis(text: str) -> str:
     return emoji_pattern.sub(r'', text)
 
 # Команда /start
+# Баланс в памяти (потом перенесём в БД)
+user_balances = {}
+START_CREDITS = 30
+
+@dp.message(CommandStart())
+async def cmd_start(message: Message):  # используем уже импортированный Message
+    user_id = message.from_user.id
+    if user_id not in user_balances:
+        user_balances[user_id] = START_CREDITS
+
+    balance = user_balances[user_id]
+
+    welcome_text = (
+        "Привет! Я твой личный видеособеседник!\n\n"
+        "Что умею:\n"
+        "• Отвечать живыми видеокружочками\n"
+        "• Синхронизация губ + мимика\n"
+        "• Помню весь диалог\n"
+        "• Русский и английский языки\n\n"
+        "Тарифы:\n"
+        "• 1 видеоответ = 1 кредит\n"
+        "• При старте — 30 кредитов бесплатно\n"
+        "• 100 кредитов — 299 ₽\n"
+        "• 300 кредитов — 799 ₽\n\n"
+        "Пополни баланс и общайся без лимита!"
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пополнить баланс", callback_data="topup")]
+    ])
+
+    await message.answer(
+        text=f"{welcome_text}\n\nБаланс: {balance} кредитов",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(F.data == "topup")
+async def callback_topup(callback: CallbackQuery):
+    await callback.answer()  # убираем "часики"
+
+    await callback.message.answer(
+        "Выберите пакет кредитов:\n\n"
+        "100 кредитов — 299 ₽\n"
+        "300 кредитов — 799 ₽\n\n"
+        "Оплата через ЮKassa — мгновенно и безопасно.\n"
+        "После оплаты кредиты придут автоматически!"
+    )
+
+
+@dp.message(Command("balance"))
+async def cmd_balance(message: Message):
+    balance = user_balances.get(message.from_user.id, 0)
+    await message.answer(f"Ваш баланс: {balance} кредитов")
 # Обработка текстовых сообщений
 @dp.message()
 async def handle_message(message: Message, state: FSMContext):
@@ -104,7 +158,7 @@ async def handle_message(message: Message, state: FSMContext):
                 json={
                     "model": "meta-llama/llama-3-70b-instruct",  # Новая модель
                     "messages": [
-                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, молодая девушка, помнишь контекст, даешь советы, отвечай на русском с юмором."}
+                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, молодая девушка, помнишь контекст, даешь советы, отвечай на русском."}
                     ] + conversation,
                     "max_tokens": 150
                 }
@@ -283,117 +337,11 @@ def create_animation(text: str, duration: float, audio_path: str) -> bytes:
 
     return video_bytes.read()
 
-# Баланс в памяти (потом перенесём в БД)
-user_balances = {}
-START_CREDITS = 30
-
-@dp.message(CommandStart())
-async def cmd_start(message: Message):  # используем уже импортированный Message
-    user_id = message.from_user.id
-    if user_id not in user_balances:
-        user_balances[user_id] = START_CREDITS
-
-    balance = user_balances[user_id]
-
-    welcome_text = (
-        "Привет! Я твой личный видеособеседник!\n\n"
-        "Что умею:\n"
-        "• Отвечать живыми видеокружочками\n"
-        "• Синхронизация губ + мимика\n"
-        "• Помню весь диалог\n"
-        "• Русский и английский языки\n\n"
-        "Тарифы:\n"
-        "• 1 видеоответ = 1 кредит\n"
-        "• При старте — 30 кредитов бесплатно\n"
-        "• 100 кредитов — 299 ₽\n"
-        "• 300 кредитов — 799 ₽\n\n"
-        "Пополни баланс и общайся без лимита!"
-    )
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пополнить баланс", callback_data="topup")]
-    ])
-
-    await message.answer(
-        text=f"{welcome_text}\n\nБаланс: {balance} кредитов",
-        reply_markup=keyboard
-    )
-
-
-@dp.callback_query(F.data == "topup")
-async def callback_topup(callback: CallbackQuery):
-    await callback.answer()  # убираем "часики"
-
-    await callback.message.answer(
-        "Выберите пакет кредитов:\n\n"
-        "100 кредитов — 299 ₽\n"
-        "300 кредитов — 799 ₽\n\n"
-        "Оплата через ЮKassa — мгновенно и безопасно.\n"
-        "После оплаты кредиты придут автоматически!"
-    )
-
-
-@dp.message(Command("balance"))
-async def cmd_balance(message: Message):
-    balance = user_balances.get(message.from_user.id, 0)
-    await message.answer(f"Ваш баланс: {balance} кредитов")
 
 
 
-# Обработка текстовых сообщений
-@dp.message()
-async def handle_message(message: Message):
-    try:
-        logging.info(f"Получено сообщение: {message.text}")
-        # Получение ответа от OpenRouter
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "google/gemma-2-9b-it:free",
-                    "messages": [
-                        {"role": "system", "content": "Ты дружелюбный виртуальный собеседник, отвечай на русском с юмором."},
-                        {"role": "user", "content": message.text}
-                    ],
-                    "max_tokens": 150
-                }
-            ) as response:
-                if response.status != 200:
-                    response_text = await response.text()
-                    logging.error(f"Ошибка API: {response.status}, Ответ: {response_text}")
-                    raise Exception(f"Ошибка API: {response.status}: {response_text}")
-                data = await response.json()
-                ai_text = data['choices'][0]['message']['content']
-                logging.info(f"Ответ от OpenRouter: {ai_text}")
 
-        # Удаляем смайлики для видео и аудио
-        clean_text = remove_emojis(ai_text)
-        logging.info(f"Текст без смайликов для видео/аудио: {clean_text}")
 
-        # Генерация аудио и длительности
-        audio_data, duration, audio_path = text_to_speech(clean_text)
-        # Генерация видео
-        video_data = create_animation(clean_text, duration, audio_path)
-
-        # Отправка видеосообщения
-        logging.info("Отправка видеосообщения...")
-        await message.reply_video_note(
-            BufferedInputFile(video_data, filename="video_note.mp4"),
-            duration=int(duration),
-            length=480,
-            supports_streaming=True
-        )
-        logging.info("Видеосообщение отправлено")
-        # Отправка оригинального текста с смайликами
-        await message.reply(ai_text)
-        logging.info("Текстовый ответ отправлен")
-    except Exception as e:
-        logging.error(f"Ошибка в handle_message: {str(e)}")
-        await message.reply(f"Ой, что-то пошло не так: {str(e)}")
 
 # Webhook setup
 async def on_startup() -> None:
